@@ -1,0 +1,21 @@
+{
+  "name": "@okayed/web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@okayed/core": "workspace:*",
+    "@okayed/engine": "workspace:*",
+    "agents": "^0.31.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}
