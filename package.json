@@ -1,0 +1,21 @@
+{
+  "name": "okayed",
+  "private": true,
+  "description": "Scoped-authority approvals for AI agents: plain-language okays become exact, signed, expiring grants.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "build": "pnpm -r --if-present build",
+    "dev:worker": "pnpm --filter @okayed/worker dev",
+    "dev:web": "pnpm --filter @okayed/web dev",
+    "dev:playground": "pnpm --filter @okayed/playground dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}
