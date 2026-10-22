@@ -1,0 +1,20 @@
+{
+  "name": "@okayed/core",
+  "version": "0.1.0",
+  "description": "okayed service logic behind provider-neutral ports, with in-memory adapters.",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@okayed/engine": "workspace:*",
+    "@okayed/grant": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}

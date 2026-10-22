@@ -14,8 +14,11 @@ function agent(aud: string): string {
 
 export function duration(s: number): string {
   if (s < 90) return `${s} seconds`;
-  if (s < 5400) return `${Math.round(s / 60)} minutes`;
-  if (s < 2 * 86400) return `${Math.round(s / 360) / 10} hours`.replace(".0 ", " ");
+  if (s < 3600) return `${Math.round(s / 60)} minutes`;
+  if (s < 2 * 86400) {
+    const h = Math.round(s / 360) / 10;
+    return h === 1 ? "1 hour" : `${h} hours`;
+  }
   return `${Math.round(s / 86400)} days`;
 }
 
