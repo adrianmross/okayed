@@ -17,7 +17,7 @@ import {
   type Snapshot,
 } from "@okayed/core";
 import { parseRes } from "@okayed/engine";
-import type { Assurance } from "@okayed/grant";
+import { sha256Hex, type Assurance } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
 import type { Env } from "./env.ts";
 
@@ -73,9 +73,29 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
 
   // ---------- WebSocket: live state for the person's tabs ----------
 
-  async onConnect(conn: Connection, ctx: ConnectionContext): Promise<void> {
+  /** Hash of the owner token, cached so the synchronous protocol check below can use it. */
+  private ownerHash: string | null = null;
+
+  async onStart(): Promise<void> {
+    this.ownerHash = (await this.ctx.storage.get<{ ownerTokenHash: string }>("meta"))?.ownerTokenHash ?? null;
+  }
+
+  private ownsConnection(ctx: ConnectionContext): boolean {
     const token = new URL(ctx.request.url).searchParams.get("token");
-    if (!(await this.svc.isOwner(token))) {
+    return !!token && !!this.ownerHash && sha256Hex(token) === this.ownerHash;
+  }
+
+  /**
+   * The Agents SDK sends identity and state to a socket as soon as it connects, before `onConnect` runs. The
+   * Worker already refuses unauthenticated upgrades (`onBeforeConnect`); this keeps the DO from ever sending
+   * state to a socket without the owner token, even if something routes one here directly.
+   */
+  shouldSendProtocolMessages(_conn: Connection, ctx: ConnectionContext): boolean {
+    return this.ownsConnection(ctx);
+  }
+
+  async onConnect(conn: Connection, ctx: ConnectionContext): Promise<void> {
+    if (!this.ownsConnection(ctx)) {
       conn.close(4401, "unauthorized");
       return;
     }
@@ -113,6 +133,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     return this.reply(async () => {
       const token = await this.svc.claim();
       if (!token) throw new OkayedError(409, "user exists");
+      this.ownerHash = sha256Hex(token);
       return { userId: this.name, ownerToken: token, issuer: (await this.svc.snapshot()).issuer };
     }, 201);
   }
