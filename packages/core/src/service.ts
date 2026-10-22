@@ -287,7 +287,7 @@ export class OkayedService implements FlowTarget {
 
   // ---------- requests from agents ----------
 
-  async submitRequest(agentId: string, input: { act: unknown; res: unknown; why?: unknown; ttl?: unknown }): Promise<{ request: Request; status: RequestStatus | "approving"; cardId?: string; reason?: string }> {
+  async submitRequest(agentId: string, input: { act?: unknown; res?: unknown; why?: unknown; ttl?: unknown }): Promise<{ request: Request; status: RequestStatus | "approving"; cardId?: string; reason?: string }> {
     const act = typeof input.act === "string" ? input.act : "";
     if (!CATALOG[act]) throw new OkayedError(400, `unknown action "${act}"; known: ${Object.keys(CATALOG).join(", ")}`);
     const rawRes = Array.isArray(input.res) ? input.res : typeof input.res === "string" ? [input.res] : [];

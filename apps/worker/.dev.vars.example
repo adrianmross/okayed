@@ -1,0 +1,7 @@
+# Copy to .dev.vars for `wrangler dev`.
+# 32 random bytes as hex: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ISSUER_SECRET=
+# Optional: a fine-grained token with pull-request write access to your demo repo only.
+GITHUB_TOKEN=
+# Use "heuristic" to run without Workers AI (no Cloudflare login needed).
+DRAFTER=heuristic
