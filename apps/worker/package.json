@@ -1,0 +1,26 @@
+{
+  "name": "@okayed/worker",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:local": "wrangler dev --env local",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@okayed/core": "workspace:*",
+    "@okayed/engine": "workspace:*",
+    "@okayed/grant": "workspace:*",
+    "agents": "^0.31.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261028.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5",
+    "wrangler": "^4.155.0"
+  }
+}
