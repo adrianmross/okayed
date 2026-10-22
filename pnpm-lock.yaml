@@ -15,6 +15,22 @@ importers:
         specifier: ^4.0.5
         version: 4.1.12(vite@8.3.5(esbuild@0.28.2)(yaml@2.9.1))
 
+  apps/playground:
+    dependencies:
+      '@okayed/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@okayed/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.1.12
+        version: 7.3.7(lightningcss@1.33.0)(yaml@2.9.1)
+
   apps/web:
     dependencies:
       '@okayed/core':

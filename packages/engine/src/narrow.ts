@@ -74,7 +74,8 @@ export function coerceProposal(raw: unknown): Proposal {
 }
 
 function duration(s: number): string {
-  if (s % 86400 === 0 && s >= 86400) return `${s / 86400} d`;
+  if (s >= 86400 * 365) return `${Math.round(s / (86400 * 365))} years`;
+  if (s >= 86400) return `${Math.round(s / 86400)} d`;
   if (s % 3600 === 0 && s >= 3600) return `${s / 3600} h`;
   if (s % 60 === 0) return `${s / 60} min`;
   return `${s} s`;
