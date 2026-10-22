@@ -84,7 +84,7 @@ export function summarize(result: NarrowResult): string {
 
 export function describeRule(r: Rule, now: Unix): string {
   const verb = r.effect === "allow" ? "Auto-approve" : r.effect === "ask" ? "Ask before" : "Never allow";
-  const acts = r.act.endsWith("*") ? `${r.act.replace(/\.?\*$/, "")} (anything)` : CATALOG[r.act]?.verb ?? r.act;
+  const acts = r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act;
   const where = r.res && r.res !== "**" ? ` on ${r.res}` : "";
   const until = r.until ? (r.until > now ? ` for ${duration(r.until - now)}` : " (expired)") : "";
   return `${verb} ${acts}${where}${until}`;

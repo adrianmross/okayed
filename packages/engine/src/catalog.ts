@@ -14,6 +14,8 @@ export interface ActionSpec {
   maxUses: number;
   /** Verb phrase for sentences: "merge", "deploy". */
   verb: string;
+  /** Noun phrase for rules: "merging pull requests". */
+  noun: string;
   /** Whether a PR resource must pin a commit. */
   pinCommit?: boolean;
 }
@@ -32,6 +34,7 @@ export const CATALOG: Record<string, ActionSpec> = {
     uses: 50,
     maxUses: 500,
     verb: "read",
+    noun: "reading GitHub",
   },
   "github.pr.comment": {
     act: "github.pr.comment",
@@ -43,6 +46,7 @@ export const CATALOG: Record<string, ActionSpec> = {
     uses: 1,
     maxUses: 10,
     verb: "comment on",
+    noun: "commenting on pull requests",
   },
   "github.pr.merge": {
     act: "github.pr.merge",
@@ -54,6 +58,7 @@ export const CATALOG: Record<string, ActionSpec> = {
     uses: 1,
     maxUses: 1,
     verb: "merge",
+    noun: "merging pull requests",
     pinCommit: true,
   },
   "site.deploy": {
@@ -66,6 +71,7 @@ export const CATALOG: Record<string, ActionSpec> = {
     uses: 1,
     maxUses: 5,
     verb: "deploy",
+    noun: "deploying sites",
   },
   "spend.money": {
     act: "spend.money",
@@ -77,6 +83,7 @@ export const CATALOG: Record<string, ActionSpec> = {
     uses: 1,
     maxUses: 1,
     verb: "spend",
+    noun: "spending money",
   },
 };
 

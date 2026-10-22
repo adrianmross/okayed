@@ -146,7 +146,7 @@ describe("chat", () => {
   it("sets policy in plain words; read-only GitHub is then auto-approved for an hour", async () => {
     const card = await t.svc.chat("auto-approve read-only GitHub for 1 hour; ask me before anything that spends money");
     expect(card.kind).toBe("policy");
-    expect(card.ruleTexts).toEqual(["Auto-approve read for 1 hour", "Ask before spend"]);
+    expect(card.ruleTexts).toEqual(["Auto-approve reading GitHub for 1 hour", "Ask before spending money"]);
     await t.svc.confirm(card.id);
 
     const r = await t.svc.submitRequest(assistant, { act: "github.read", res: ["github:adrianmross/okayed"] });
