@@ -1,0 +1,87 @@
+# Prompt history
+
+okayed's design is mine: the problem, the grant format, the layered engine, and the rule that a model only drafts while
+a deterministic engine decides. Several ideas, like hold-and-slide to choose how long an approval lasts, come from my
+earlier work on unreleased projects (shown as [redacted]).
+
+I built it with an AI coding assistant (Claude Code), which the Cloudflare assignment encourages and asks to see. These
+are the larger prompts, lightly edited: spelling fixed, and side questions and project setup left out. Each is followed
+by the commits that came of it. Along the way I made the product and design calls, used each build as it shipped, and
+reviewed the work before merging it. The prompts okayed itself sends to Llama 3.3 are in
+[`packages/core/src/prompts.ts`](packages/core/src/prompts.ts).
+
+## 1. The problem and the ground rules
+
+The opening brief was one prompt; it's split here by the stage of work each part drove.
+
+```text
+okayed: a scoped-authority approval service for AI agents, on Cloudflare.
+
+The problem: people tell their agents things like "I approve merging #182" or "go ahead and deploy the website".
+That sentence is not an authorization anything can verify. okayed turns it into the narrowest exact, signed,
+expiring grant, shows it to the person for confirmation, and lets any tool verify the grant before acting.
+
+Requirements: Llama 3.3 on Workers AI; the Agents SDK with a Durable Object per user and a Workflow for the grant
+lifecycle; a chat UI; per-user policy, pending requests, active grants and an audit log in the Durable Object.
+
+Design rules:
+- The model drafts; a deterministic engine decides. The LLM only turns plain language into a proposed grant and
+  explains requests and decisions. Allow/deny and narrowing are pure, tested TypeScript.
+- Least privilege by construction: grants pin exact targets (repo + PR + commit SHA; site + environment), the
+  shortest reasonable lifetime and the fewest uses. The engine refuses anything broader than what the person said,
+  and shows what it cut ("asked for X, granted Y, refused Z because ...").
+- Ambiguity is a question, not a guess ("which site?", "which environment?").
+- "Once" means exactly one use: the Durable Object decrements atomically; a second use is refused.
+- Every grant is revocable at any time; expiry is enforced by the Workflow and by verifiers.
+
+Grant format (v0, JSON, signed as a Nostr event; kinds are placeholders, not registered):
+{v, id (JCS hash), iss, aud, act, res[], when[], nbf, exp, uses, risk, assurance, from{utterance, request}, nonce}.
+Kinds: 4840 request, 4841 grant, 4842 revoke, 4843 use receipt, 4844 emergency stop, 34840 policy. Use NIP-40
+expiration tags. assurance records how the person confirmed (a web click today; a hardware-key proof later).
+
+Start with a short design doc and the grant format. Ask before adding any paid Cloudflare feature.
+```
+
+- `docs: add design doc and v0 grant format`
+
+## 2. The engine
+
+```text
+packages/engine: a pure engine. Policy = layered rules, where each layer can only narrow the one above; a decision is
+allowed only if every layer allows; the reason names the first layer that refuses; a "beyond" list shows what was
+asked for but not granted. Plenty of unit tests, including adversarial ones where the prompt tries to widen scope.
+```
+
+- `feat(engine): add pure policy, narrowing and use-check engine with tests`
+- `feat(grant): add v0 grant format with JCS ids and signed Nostr events`
+
+## 3. The Worker
+
+```text
+apps/worker: an Agents SDK agent and a Durable Object per user; a Workflow for request -> propose -> await confirm ->
+issue -> expire/revoke; an HTTP API for agents to submit requests and for tools to verify grants (POST /verify).
+Cloudflare first, but design so another provider can be added later.
+```
+
+- `feat(core): add provider-neutral service, grant lifecycle flow and in-memory adapters`
+- `feat(worker): add Agents SDK agent, grant lifecycle Workflow and HTTP API`
+- `chore: add dev:local script for running the Worker without a login`
+
+## 4. The two UIs
+
+```text
+apps/web: a chat to set policy in plain words ("auto-approve read-only GitHub for 1 hour; ask me before anything that
+spends money"), pending requests as a clear card (a plain sentence, what it allows, what it does not, risk),
+confirm/deny/revoke, and an audit view.
+
+apps/playground: write a policy, ask a question, see allow/deny with a one-sentence reason and a per-layer breakdown,
+with one-tap "what if" edits. The headline demo: plain-language approval -> proposed grant -> engine narrows it ->
+diff of what was cut.
+```
+
+No paid Cloudflare features were added: Workers, Durable Objects (SQLite), Workflows, the Workers AI free allocation
+and static assets are all on the free plan.
+
+- `feat(web): add chat UI for policy, request cards, grants and audit`
+- `feat(playground): add in-browser policy playground and narrowing demo`
+- `docs: add README, prompt history and screenshots`
