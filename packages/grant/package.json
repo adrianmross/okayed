@@ -1,0 +1,21 @@
+{
+  "name": "@okayed/grant",
+  "version": "0.1.0",
+  "description": "okayed grant format v0: JCS ids, Nostr events, BIP-340 signatures.",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@okayed/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}
