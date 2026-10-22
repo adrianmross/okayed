@@ -73,7 +73,19 @@ export default {
     const url = new URL(req.url);
 
     if (url.pathname.startsWith("/agents/")) {
-      return (await routeAgentRequest(req, env, { cors: true })) ?? json({ error: "not found" }, 404);
+      // Only the person's own browser may open the live-state socket: check the owner token before upgrading.
+      const res = await routeAgentRequest(req, env, {
+        cors: true,
+        onBeforeConnect: async (r) => {
+          const name = /^\/agents\/okayed-agent\/([0-9a-f]{32})$/.exec(new URL(r.url).pathname)?.[1];
+          if (!name) return json({ error: "not found" }, 404);
+          const stub = await getAgentByName(env.OkayedAgent, name);
+          if (!(await stub.isOwner(new URL(r.url).searchParams.get("token")))) return json({ error: "unauthorized" }, 401);
+          return undefined;
+        },
+        onBeforeRequest: () => json({ error: "not found" }, 404),
+      });
+      return res ?? json({ error: "not found" }, 404);
     }
     if (url.pathname === "/" || url.pathname === "/api") return json(INFO);
     if (url.pathname === "/api/users" && req.method === "POST") {

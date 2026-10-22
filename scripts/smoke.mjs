@@ -52,6 +52,20 @@ const read = await call("POST", `${u}/requests`, agentToken, { act: "github.read
 const readSt = await call("GET", `${u}/requests/${read.request.id}?wait=15`, agentToken);
 check(readSt.status === "granted", "read-only request auto-approved by policy");
 
+// The live-state socket must give nothing to a caller without the owner token.
+async function socketTypes(token) {
+  const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/agents/okayed-agent/${userId}${token ? `?token=${token}` : ""}`);
+  const types = [];
+  ws.onmessage = (e) => types.push(JSON.parse(String(e.data)).type);
+  ws.onerror = () => {};
+  await new Promise((r) => setTimeout(r, 1500));
+  ws.close();
+  return types;
+}
+check(!(await socketTypes(null)).includes("cf_agent_state"), "no state over the socket without a token");
+check(!(await socketTypes("own_wrong")).includes("cf_agent_state"), "no state over the socket with a wrong token");
+check((await socketTypes(ownerToken)).includes("cf_agent_state"), "the owner's socket gets live state");
+
 const state = await call("GET", `${u}/state`, ownerToken);
 check(state.audit.length > 0, `audit has ${state.audit.length} entries`);
 console.log(`\nuser ${userId}\nowner token ${ownerToken}`);
