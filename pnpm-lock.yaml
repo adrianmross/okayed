@@ -23,6 +23,9 @@ importers:
       '@okayed/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@okayed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -39,6 +42,9 @@ importers:
       '@okayed/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@okayed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       agents:
         specifier: ^0.31.0
         version: 0.31.0(@babel/core@8.0.9)(@babel/runtime@7.29.10)(@modelcontextprotocol/client@2.3.1)(rolldown@1.2.15)(vite@7.3.7(lightningcss@1.33.0)(yaml@2.9.1))(zod@4.6.7)
@@ -121,6 +127,19 @@ importers:
       vitest:
         specifier: ^4.0.5
         version: 4.1.12(vite@8.3.5(esbuild@0.28.2)(yaml@2.9.1))
+
+  packages/ui:
+    dependencies:
+      '@okayed/core':
+        specifier: workspace:*
+        version: link:../core
+      '@okayed/engine':
+        specifier: workspace:*
+        version: link:../engine
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 
