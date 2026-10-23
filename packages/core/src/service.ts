@@ -1,5 +1,4 @@
 import {
-  allowsFor,
   BASELINE,
   CATALOG,
   canonRes,
@@ -8,25 +7,15 @@ import {
   DEFAULT_USER_LAYER,
   describeRequestSentence,
   describeRule,
-  doesNotAllowFor,
   fitsAction,
-  lint,
   narrowGrant,
-  narrowPolicy,
   parseRes,
   sentenceFor,
-  summarize,
-  type Beyond,
-  type Facts,
   type GrantDraft,
   type Layer,
   type Policy,
-  type Proposal,
   type Request,
-  type Risk,
-  type Rule,
   type Targets,
-  type UseCode,
 } from "@okayed/engine";
 import {
   buildGrant,
@@ -39,20 +28,26 @@ import {
   sha256Hex,
   stopTemplate,
   type Assurance,
-  type Grant,
   type NostrEvent,
 } from "@okayed/grant";
+import { chatCard, draftOf, grantCard } from "./cards.ts";
 import type { FlowTarget } from "./flow.ts";
 import type { Clock, DraftContext, Drafter, Lifecycle, Randomness, Signer, Store } from "./ports.ts";
-
-export class OkayedError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import {
+  OkayedError,
+  type AgentRecord,
+  type AuditEntry,
+  type Card,
+  type ChatMessage,
+  type GrantRecord,
+  type Meta,
+  type RequestRecord,
+  type RequestStatus,
+  type Snapshot,
+  type VerifyInput,
+  type VerifyResult,
+} from "./records.ts";
+import { buildSnapshot } from "./views.ts";
 
 export interface ServiceDeps {
   userId: string;
@@ -62,126 +57,6 @@ export interface ServiceDeps {
   drafter: Drafter;
   lifecycle: Lifecycle;
   random: Randomness;
-}
-
-interface Meta {
-  userId: string;
-  createdAt: number;
-  ownerTokenHash: string;
-  /** Latest emergency stop. Grants issued at or before it are dead. */
-  stoppedAt?: number;
-  /** Auto-approval is off after a stop until the person resumes. */
-  paused: boolean;
-}
-
-export interface AgentRecord {
-  id: string;
-  name: string;
-  tokenHash: string;
-  createdAt: number;
-}
-
-export type RequestStatus = "pending" | "granted" | "denied" | "expired";
-
-export interface RequestRecord {
-  request: Request;
-  status: RequestStatus;
-  cardId?: string;
-  grantId?: string;
-  reason?: string;
-}
-
-export type CardStatus = "open" | "confirming" | "confirmed" | "denied" | "lapsed" | "closed";
-
-/** Something shown to the person: a proposed grant, a proposed policy change, a question, or a refusal. */
-export interface Card {
-  id: string;
-  kind: "grant" | "policy" | "question" | "refuse" | "reply";
-  source: "chat" | "request";
-  status: CardStatus;
-  createdAt: number;
-  utterance?: string;
-  requestId?: string | null;
-  /** The deterministic sentence the person confirms. */
-  sentence: string;
-  allows: string[];
-  doesNot: string[];
-  risk?: Risk;
-  beyond: Beyond[];
-  notes: string[];
-  summary?: string;
-  decision?: { verdict: string; reason: string; layers: { layer: string; verdict: string; why: string }[] };
-  /** The model's plain-words explanation, if any. Never what is confirmed. */
-  explanation?: string | null;
-  draft?: GrantDraft;
-  ttl?: number;
-  asked?: Proposal;
-  rules?: Rule[];
-  ruleTexts?: string[];
-  warnings?: string[];
-  question?: string;
-  options?: string[];
-  grantId?: string;
-  closedReason?: string;
-  drafter?: string;
-}
-
-export type GrantStatus = "active" | "expired" | "revoked" | "used";
-
-export interface GrantRecord {
-  grant: Grant;
-  event: NostrEvent;
-  cardId: string;
-  used: number;
-  status: GrantStatus;
-  revokedAt?: number;
-  revokeReason?: string;
-}
-
-export interface AuditEntry {
-  at: number;
-  type: string;
-  text: string;
-  ref?: string;
-  event?: NostrEvent;
-}
-
-export interface ChatMessage {
-  at: number;
-  role: "person" | "okayed";
-  text: string;
-  cardId?: string;
-}
-
-export interface VerifyInput {
-  event?: unknown;
-  grantId?: string;
-  aud: string;
-  act: string;
-  res: string;
-  consume: boolean;
-  facts?: Facts;
-}
-
-export type VerifyResult =
-  | { ok: true; grant: string; left: number; receipt?: NostrEvent }
-  | { ok: false; code: UseCode | "unknown_grant" | "bad_event"; reason: string };
-
-export interface Snapshot {
-  userId: string;
-  issuer: string;
-  drafter: string;
-  now: number;
-  paused: boolean;
-  stoppedAt?: number;
-  policy: { layers: Layer[]; described: { layer: string; rules: { id: string; text: string; effect: string; until?: number }[] }[]; warnings: string[] };
-  cards: Card[];
-  requests: RequestRecord[];
-  grants: (GrantRecord & { sentence: string })[];
-  audit: AuditEntry[];
-  chat: ChatMessage[];
-  agents: { id: string; name: string; createdAt: number }[];
-  targets: Targets;
 }
 
 const AUDIT_MAX = 300;
@@ -202,6 +77,11 @@ export class OkayedService implements FlowTarget {
 
   get userId(): string {
     return this.d.userId;
+  }
+
+  /** This user's issuer key: the `iss` of every grant, and the key verifiers should trust. */
+  get issuer(): string {
+    return this.d.signer.pubkey;
   }
 
   async now(): Promise<number> {
@@ -326,7 +206,7 @@ export class OkayedService implements FlowTarget {
         await this.audit(tx, { type: "deny", text: `Refused ${request.id}: ${rec.reason}`, ref: request.id });
         return { rec, card: null as Card | null, auto: false };
       }
-      const card = this.grantCard(result, "request", request.id, now);
+      const card = grantCard(`c_${this.d.random.hex(8)}`, result, "request", now);
       const auto = result.decision.verdict === "allow" && !meta.paused;
       if (auto) card.status = "confirming";
       rec.cardId = card.id;
@@ -372,45 +252,8 @@ export class OkayedService implements FlowTarget {
     const card = await this.d.store.transaction(async (tx) => {
       const policy = await this.policy(tx);
       const targets = await this.targets(tx);
-      const id = `c_${this.d.random.hex(8)}`;
-      let card: Card;
-      if (draft.intent === "other") {
-        card = { id, kind: "reply", source: "chat", status: "closed", createdAt: now, utterance: text, sentence: draft.reply.slice(0, 500), allows: [], doesNot: [], beyond: [], notes: [] };
-      } else if (draft.intent === "policy") {
-        const r = narrowPolicy({ utterance: text, proposal: draft.policy, policy, layer: DEFAULT_USER_LAYER.name, targets, now });
-        if (r.kind === "question") {
-          card = { id, kind: "question", source: "chat", status: "closed", createdAt: now, utterance: text, sentence: r.question, question: r.question, options: r.options, allows: [], doesNot: [], beyond: r.beyond, notes: [] };
-        } else {
-          card = {
-            id,
-            kind: "policy",
-            source: "chat",
-            status: r.rules.length ? "open" : "closed",
-            createdAt: now,
-            utterance: text,
-            sentence: r.rules.length ? `Change your policy: ${r.rules.map((x) => describeRule(x, now)).join("; ")}.` : "Nothing in that changes your policy.",
-            allows: r.rules.filter((x) => x.effect === "allow").map((x) => describeRule(x, now)),
-            doesNot: [...r.rules.filter((x) => x.effect !== "allow").map((x) => describeRule(x, now)), "auto-approve anything that changes the world (okayed's own layer always asks)"],
-            beyond: r.beyond,
-            notes: r.notes,
-            rules: r.rules,
-            ruleTexts: r.rules.map((x) => describeRule(x, now)),
-            warnings: r.warnings.map((w) => `${w.layer}/${w.rule}: ${w.message}`),
-          };
-        }
-      } else {
-        const pending = await this.pendingRequests(tx, now);
-        const result = narrowGrant({ utterance: text, proposal: draft.grant, requests: pending, targets, policy, now });
-        if (result.kind === "grant") {
-          card = this.grantCard(result, "chat", result.draft.from.request, now, id);
-          card.utterance = text;
-        } else if (result.kind === "question") {
-          card = { id, kind: "question", source: "chat", status: "closed", createdAt: now, utterance: text, sentence: result.question, question: result.question, options: result.options, allows: [], doesNot: [], beyond: result.beyond, notes: [] };
-        } else {
-          card = { id, kind: "refuse", source: "chat", status: "closed", createdAt: now, utterance: text, sentence: result.reason, allows: [], doesNot: [], beyond: result.beyond, notes: [], summary: summarize(result) };
-          if (result.decision) card.decision = this.decisionView(result.decision);
-        }
-      }
+      const pending = draft.intent === "grant" ? await this.pendingRequests(tx, now) : [];
+      const card = chatCard(`c_${this.d.random.hex(8)}`, text, draft, { policy, targets, pending, now });
       card.drafter = this.d.drafter.name;
       await tx.put(`card:${card.id}`, card);
       await this.say(tx, { role: "okayed", text: card.sentence, cardId: card.id });
@@ -482,7 +325,7 @@ export class OkayedService implements FlowTarget {
       rec.revokedAt = now;
       rec.revokeReason = reason;
       await tx.put(`grant:${grantId}`, rec);
-      await this.audit(tx, { type: "revoke", text: `Revoked: ${sentenceFor(this.draftOf(rec.grant))} (${reason})`, ref: grantId, event });
+      await this.audit(tx, { type: "revoke", text: `Revoked: ${sentenceFor(draftOf(rec.grant))} (${reason})`, ref: grantId, event });
       return rec;
     });
     await this.d.lifecycle.send(rec.cardId, { type: "revoke", reason });
@@ -655,7 +498,7 @@ export class OkayedService implements FlowTarget {
       if (this.d.clock.now() < rec.grant.exp) return;
       rec.status = "expired";
       await tx.put(`grant:${grantId}`, rec);
-      await this.audit(tx, { type: "expire", text: `Expired: ${sentenceFor(this.draftOf(rec.grant))}`, ref: grantId });
+      await this.audit(tx, { type: "expire", text: `Expired: ${sentenceFor(draftOf(rec.grant))}`, ref: grantId });
     });
   }
 
@@ -666,48 +509,9 @@ export class OkayedService implements FlowTarget {
   // ---------- views ----------
 
   async snapshot(): Promise<Snapshot> {
-    const now = this.d.clock.now();
     const s = this.d.store;
-    const meta = await this.meta(s);
-    const policy = await this.policy(s);
-    const cards = [...(await s.list<Card>("card:")).values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 60);
-    const requests = [...(await s.list<RequestRecord>("req:")).values()]
-      .map((r) => (r.status === "pending" && r.request.exp <= now ? { ...r, status: "expired" as const } : r))
-      .sort((a, b) => b.request.at - a.request.at)
-      .slice(0, 60);
-    const grants = [...(await s.list<GrantRecord>("grant:")).values()]
-      .map((g) => ({ ...(g.status === "active" && g.grant.exp <= now ? { ...g, status: "expired" as const } : g), sentence: sentenceFor(this.draftOf(g.grant)) }))
-      .sort((a, b) => b.grant.nbf - a.grant.nbf)
-      .slice(0, 60);
-    const agents = [...(await s.list<AgentRecord>("agent:")).values()].map(({ id, name, createdAt }) => ({ id, name, createdAt }));
-    const snap: Snapshot = {
-      userId: this.d.userId,
-      issuer: this.d.signer.pubkey,
-      drafter: this.d.drafter.name,
-      now,
-      paused: meta.paused,
-      policy: {
-        layers: policy.layers,
-        described: policy.layers.map((l) => ({
-          layer: l.name,
-          rules: l.rules.map((r) => {
-            const out: { id: string; text: string; effect: string; until?: number } = { id: r.id, text: describeRule(r, now), effect: r.effect };
-            if (r.until !== undefined) out.until = r.until;
-            return out;
-          }),
-        })),
-        warnings: lint(policy, now).map((w) => `${w.layer}/${w.rule}: ${w.message}`),
-      },
-      cards,
-      requests,
-      grants,
-      audit: ((await s.get<AuditEntry[]>("audit")) ?? []).slice(-150).reverse(),
-      chat: (await s.get<ChatMessage[]>("chat")) ?? [],
-      agents,
-      targets: await this.targets(s),
-    };
-    if (meta.stoppedAt !== undefined) snap.stoppedAt = meta.stoppedAt;
-    return snap;
+    const who = { userId: this.d.userId, issuer: this.d.signer.pubkey, drafter: this.d.drafter.name };
+    return buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), this.d.clock.now());
   }
 
   async events(): Promise<NostrEvent[]> {
@@ -716,37 +520,6 @@ export class OkayedService implements FlowTarget {
   }
 
   // ---------- internals ----------
-
-  private draftOf(g: Grant): GrantDraft {
-    return { aud: g.aud, act: g.act, res: g.res, when: g.when, nbf: g.nbf, exp: g.exp, uses: g.uses, risk: g.risk, from: g.from };
-  }
-
-  private decisionView(d: { verdict: string; reason: string; layers: { layer: string; verdict: string; why: string }[] }): NonNullable<Card["decision"]> {
-    return { verdict: d.verdict, reason: d.reason, layers: d.layers.map((l) => ({ layer: l.layer, verdict: l.verdict, why: l.why })) };
-  }
-
-  private grantCard(result: Extract<ReturnType<typeof narrowGrant>, { kind: "grant" }>, source: Card["source"], requestId: string | null, now: number, id?: string): Card {
-    const d = result.draft;
-    return {
-      id: id ?? `c_${this.d.random.hex(8)}`,
-      kind: "grant",
-      source,
-      status: "open",
-      createdAt: now,
-      requestId,
-      sentence: sentenceFor(d),
-      allows: allowsFor(d),
-      doesNot: doesNotAllowFor(d),
-      risk: d.risk,
-      beyond: result.beyond,
-      notes: result.notes,
-      summary: summarize(result),
-      decision: this.decisionView(result.decision),
-      draft: d,
-      ttl: d.exp - d.nbf,
-      asked: result.asked,
-    };
-  }
 
   private async attachExplanation(card: Card): Promise<void> {
     const facts = [
