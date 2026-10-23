@@ -17,7 +17,7 @@ import {
   type Snapshot,
 } from "@okayed/core";
 import { parseRes } from "@okayed/engine";
-import { sha256Hex, type Assurance } from "@okayed/grant";
+import { KIND, sha256Hex, type Assurance } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
 import type { Env } from "./env.ts";
 
@@ -134,7 +134,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       const token = await this.svc.claim();
       if (!token) throw new OkayedError(409, "user exists");
       this.ownerHash = sha256Hex(token);
-      return { userId: this.name, ownerToken: token, issuer: (await this.svc.snapshot()).issuer };
+      return { userId: this.name, ownerToken: token, issuer: this.svc.issuer };
     }, 201);
   }
 
@@ -212,7 +212,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
 
   async openApi(method: PublicMethod, args: unknown[]): Promise<ApiReply> {
     if (!PUBLIC.includes(method)) return { status: 404, body: { error: "no such method" } };
-    if (method === "issuer") return this.reply(async () => ({ issuer: (await this.svc.snapshot()).issuer, kinds: { request: 4840, grant: 4841, revoke: 4842, receipt: 4843, stop: 4844, policy: 34840 } }));
+    if (method === "issuer") return this.reply(async () => ({ issuer: this.svc.issuer, kinds: KIND }));
     return this.reply(async () => {
       const body = (args[0] ?? {}) as { event?: unknown; grantId?: unknown; aud?: unknown; act?: unknown; res?: unknown; consume?: unknown; facts?: unknown };
       if (typeof body.aud !== "string" || typeof body.act !== "string" || typeof body.res !== "string") {
