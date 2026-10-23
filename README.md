@@ -83,12 +83,13 @@ The grant format (JSON, JCS-hashed id, signed as a Nostr event, kinds 4840–484
 ## Repository layout
 
 ```
-packages/engine      pure decision engine: catalog, resources, anchors, policy, narrowing, use checks (79 tests)
+packages/engine      pure decision engine: anchors, binding, narrowing, policy, use checks (79 tests)
 packages/grant       grant format v0: JCS, ids, Nostr events, BIP-340 signatures, per-user issuer keys
 packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock),
                      the lifecycle flow, prompts, a model-free drafter, in-memory adapters, the GitHub tool
 apps/worker          Cloudflare: Agents SDK agent (Durable Object per user), Workflow, Workers AI drafter, HTTP API
-apps/web             Pages: chat, request cards, grants, policy, audit, settings
+packages/ui          shared DOM components and styles for both UIs (flat blocks)
+apps/web             Pages: Now (requests + chat), Grants, Policy, Activity, Setup; Debug switch for raw detail
 apps/playground      Pages: the engine in the browser; policy what-ifs and the narrowing demo
 docs/                design notes and the grant format
 scripts/smoke.mjs    end-to-end check against a running Worker
