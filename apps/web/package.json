@@ -12,7 +12,8 @@
   "dependencies": {
     "@okayed/core": "workspace:*",
     "@okayed/engine": "workspace:*",
-    "agents": "^0.31.0"
+    "agents": "^0.31.0",
+    "@okayed/ui": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
