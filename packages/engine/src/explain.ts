@@ -1,4 +1,5 @@
 import { CATALOG } from "./catalog.ts";
+import { longDuration } from "./format.ts";
 import type { NarrowResult } from "./narrow.ts";
 import { labelRes, parseRes } from "./resource.ts";
 import type { Beyond, GrantDraft, Request, Rule, Unix } from "./types.ts";
@@ -12,16 +13,6 @@ function agent(aud: string): string {
   return aud.replace(/^agent:/, "");
 }
 
-export function duration(s: number): string {
-  if (s < 90) return `${s} seconds`;
-  if (s < 3600) return `${Math.round(s / 60)} minutes`;
-  if (s < 2 * 86400) {
-    const h = Math.round(s / 360) / 10;
-    return h === 1 ? "1 hour" : `${h} hours`;
-  }
-  return `${Math.round(s / 86400)} days`;
-}
-
 function times(n: number): string {
   return n === 1 ? "once" : n === 2 ? "twice" : `up to ${n} times`;
 }
@@ -31,7 +22,7 @@ export function sentenceFor(d: GrantDraft): string {
   const verb = CATALOG[d.act]?.verb ?? d.act;
   const what = d.res.map(labelRes).join(" and ");
   const cond = d.when.some((c) => c.c === "checks.pass") ? ", only if its checks pass" : "";
-  return `Lets ${agent(d.aud)} ${verb} ${what}${cond}, ${times(d.uses)}, within the next ${duration(d.exp - d.nbf)}.`;
+  return `Lets ${agent(d.aud)} ${verb} ${what}${cond}, ${times(d.uses)}, within the next ${longDuration(d.exp - d.nbf)}.`;
 }
 
 export function allowsFor(d: GrantDraft): string[] {
@@ -56,7 +47,7 @@ export function doesNotAllowFor(d: GrantDraft, now: Unix = d.nbf): string[] {
   if (d.act !== "github.read") out.push("anything other than this one action");
   else out.push("write, comment, merge or deploy");
   out.push(d.uses === 1 ? "a second use" : `more than ${d.uses} uses`);
-  out.push(`use after ${duration(d.exp - now)} from now`);
+  out.push(`use after ${longDuration(d.exp - now)} from now`);
   out.push(`act for anyone but ${agent(d.aud)}`);
   return [...new Set(out)];
 }
@@ -86,6 +77,6 @@ export function describeRule(r: Rule, now: Unix): string {
   const verb = r.effect === "allow" ? "Auto-approve" : r.effect === "ask" ? "Ask before" : "Never allow";
   const acts = r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act;
   const where = r.res && r.res !== "**" ? ` on ${r.res}` : "";
-  const until = r.until ? (r.until > now ? ` for ${duration(r.until - now)}` : " (expired)") : "";
+  const until = r.until ? (r.until > now ? ` for ${longDuration(r.until - now)}` : " (expired)") : "";
   return `${verb} ${acts}${where}${until}`;
 }
