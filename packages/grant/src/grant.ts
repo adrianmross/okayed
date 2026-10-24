@@ -14,6 +14,8 @@ export interface Assurance {
   at: number;
   /** A proof for methods that have one (WebAuthn assertion, an approver app's signed answer). */
   proof?: unknown;
+  /** For `policy`: the ids of the standing policies that auto-approved it and were charged for it. */
+  policy?: string[];
 }
 
 export interface Grant extends GrantBody {

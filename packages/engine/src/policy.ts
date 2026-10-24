@@ -196,3 +196,20 @@ function decideIgnoringRes(policy: Policy, act: string, now: Unix, ctx: Context)
   const stripped: Policy = { layers: policy.layers.map((l) => ({ ...l, rules: l.rules.filter((r) => r.res === undefined || r.res === "**") })) };
   return decide(stripped, act, "", now, ctx);
 }
+
+/** Problems with a rule written directly (from an editor, not from words). Empty when it's usable. */
+export function checkRule(r: unknown): string[] {
+  if (!r || typeof r !== "object") return ["not a rule"];
+  const x = r as Partial<Rule>;
+  const out: string[] = [];
+  if (typeof x.id !== "string" || !x.id) out.push("id is missing");
+  if (x.effect !== "allow" && x.effect !== "ask" && x.effect !== "deny") out.push("effect must be allow, ask or deny");
+  if (typeof x.act !== "string" || !Object.keys(CATALOG).some((a) => matchAct(x.act!, a))) out.push(`"${String(x.act)}" matches no known action`);
+  for (const k of ["res", "agent", "note"] as const) if (x[k] !== undefined && typeof x[k] !== "string") out.push(`${k} must be text`);
+  for (const k of ["maxTtl", "maxUses", "from", "until"] as const) if (x[k] !== undefined && !(Number.isInteger(x[k]) && x[k]! >= 0)) out.push(`${k} must be a whole number`);
+  if (x.budget !== undefined) {
+    for (const k of ["uses", "risk"] as const) if (x.budget[k] !== undefined && !(Number.isInteger(x.budget[k]) && x.budget[k]! >= 0)) out.push(`budget.${k} must be a whole number`);
+  }
+  if (x.when !== undefined && (!Array.isArray(x.when) || x.when.some((c) => !c || typeof c.c !== "string"))) out.push("when must be a list of conditions");
+  return out;
+}

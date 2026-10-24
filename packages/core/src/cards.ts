@@ -1,6 +1,5 @@
 import {
   allowsFor,
-  DEFAULT_USER_LAYER,
   describeRule,
   doesNotAllowFor,
   narrowGrant,
@@ -13,6 +12,8 @@ import {
   type Policy,
   type Request,
   type Targets,
+  type Usage,
+  YOU,
 } from "@okayed/engine";
 import type { Grant } from "@okayed/grant";
 import type { Draft } from "./ports.ts";
@@ -61,6 +62,7 @@ export interface ChatWorld {
   targets: Targets;
   pending: Request[];
   now: number;
+  usage?: Usage;
 }
 
 /** Turns the model's draft of what the person said into a card, with the engine deciding everything in it. */
@@ -69,7 +71,7 @@ export function chatCard(id: string, text: string, draft: Draft, w: ChatWorld): 
   if (draft.intent === "other") return sayingCard(id, "reply", text, draft.reply.slice(0, 500), now);
 
   if (draft.intent === "policy") {
-    const r = narrowPolicy({ utterance: text, proposal: draft.policy, policy: w.policy, layer: DEFAULT_USER_LAYER.name, targets: w.targets, now });
+    const r = narrowPolicy({ utterance: text, proposal: draft.policy, policy: w.policy, layer: YOU, targets: w.targets, now });
     if (r.kind === "question") return sayingCard(id, "question", text, r.question, now, { question: r.question, options: r.options, beyond: r.beyond });
     const texts = r.rules.map((x) => describeRule(x, now));
     return {
@@ -90,7 +92,7 @@ export function chatCard(id: string, text: string, draft: Draft, w: ChatWorld): 
     };
   }
 
-  const result = narrowGrant({ utterance: text, proposal: draft.grant, requests: w.pending, targets: w.targets, policy: w.policy, now });
+  const result = narrowGrant({ utterance: text, proposal: draft.grant, requests: w.pending, targets: w.targets, policy: w.policy, now, ...(w.usage ? { usage: w.usage } : {}) });
   if (result.kind === "grant") return { ...grantCard(id, result, "chat", now), utterance: text };
   if (result.kind === "question") return sayingCard(id, "question", text, result.question, now, { question: result.question, options: result.options, beyond: result.beyond });
   return sayingCard(id, "refuse", text, result.reason, now, { beyond: result.beyond, summary: summarize(result), ...(result.decision ? { decision: decisionView(result.decision) } : {}) });

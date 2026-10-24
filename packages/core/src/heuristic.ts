@@ -2,6 +2,8 @@ import { CATALOG, policyClauses } from "@okayed/engine";
 import type { Draft, DraftContext, Drafter, PolicyProposalJSON } from "./ports.ts";
 
 const POLICY_WORDS = /\b(?:auto[- ]?approve|always|never|ask me|from now on|don't ask|without asking|block|forbid|by default|rule)\b/i;
+/** Standing-authority phrasing: "let assistant merge anything …", "whenever …", "up to 30 merges", "for 2 weeks". */
+const STANDING_WORDS = /\b(?:let|allow) \w+ \w+ (?:anything|any|all|every)\b|\bwhenever\b|\bup to \d+ \w+|\bfor (?:\d+|a|one|two) (?:days?|weeks?)\b/i;
 
 /**
  * A drafter with no model: plain rules over the sentence. Used offline, in tests, and as the fallback when the
@@ -11,7 +13,7 @@ export class HeuristicDrafter implements Drafter {
   readonly name = "heuristic";
 
   async draft(utterance: string, ctx: DraftContext): Promise<Draft> {
-    if (POLICY_WORDS.test(utterance)) {
+    if (POLICY_WORDS.test(utterance) || STANDING_WORDS.test(utterance)) {
       const rules: PolicyProposalJSON["rules"] = [];
       for (const c of policyClauses(utterance, ctx.targets)) {
         if (!c.effect) continue;

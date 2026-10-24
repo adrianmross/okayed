@@ -25,6 +25,8 @@ const u = `/api/u/${userId}`;
 const { id: agent, token: agentToken } = await call("POST", `${u}/agents`, ownerToken, { name: "assistant" });
 check(agent === "agent:assistant", `agent ${agent}`);
 
+// Start from a policy that asks about everything, to walk the one-time flow; standing policies come after.
+await call("PUT", `${u}/policy`, ownerToken, { rules: [] });
 const req = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.merge", res: [PR], why: "reviewed, CI green" });
 check(req.status === "pending", `request ${req.request.id} is pending`);
 
@@ -51,6 +53,19 @@ await call("POST", `${u}/cards/${policy.id}/confirm`, ownerToken);
 const read = await call("POST", `${u}/requests`, agentToken, { act: "github.read", res: ["github:adrianmross/okayed"] });
 const readSt = await call("GET", `${u}/requests/${read.request.id}?wait=15`, agentToken);
 check(readSt.status === "granted", "read-only request auto-approved by policy");
+
+// A standing policy: assistant may merge in okayed once without asking; the next one asks and says why.
+await call("PUT", `${u}/policy`, ownerToken, { rules: [{ id: "merge-okayed", effect: "allow", act: "github.pr.merge", res: "github:adrianmross/okayed/**", agent: "agent:assistant", budget: { uses: 1 } }] });
+const pr = (n) => `github:adrianmross/okayed/pull/${n}@${SHA}`;
+const s1 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.merge", res: [pr(200)] });
+const g1 = await call("GET", `${u}/requests/${s1.request.id}?wait=15`, agentToken);
+check(g1.status === "granted" && JSON.parse(g1.grant.content).assurance.policy?.[0] === "merge-okayed", "a standing policy auto-approves a merge and is named on the grant");
+const s2 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.merge", res: [pr(201)] });
+check(s2.status === "pending", "once its budget is spent, the next merge asks");
+await call("POST", `${u}/rules/merge-okayed/topup`, ownerToken);
+const s3 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.merge", res: [pr(202)] });
+const g3 = await call("GET", `${u}/requests/${s3.request.id}?wait=15`, agentToken);
+check(g3.status === "granted", "after a top-up it goes ahead again");
 
 // The live-state socket must give nothing to a caller without the owner token.
 async function socketTypes(token) {

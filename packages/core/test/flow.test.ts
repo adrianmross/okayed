@@ -36,6 +36,8 @@ beforeEach(async () => {
   const a = await t.svc.addAgent("Assistant");
   assistant = a.id;
   expect(await t.svc.agentFor(a.token)).toBe("agent:assistant");
+  // These suites test the one-time flow, so start from a policy that asks about everything.
+  await t.svc.setRules([]);
 });
 
 async function grantFor(requestId: string) {
@@ -188,6 +190,7 @@ describe("chat", () => {
     t = setup(evil);
     await t.svc.claim();
     assistant = (await t.svc.addAgent("assistant")).id;
+    await t.svc.setRules([]);
     const { request } = await t.svc.submitRequest(assistant, { act: "github.pr.merge", res: [PR] });
     const card = await t.svc.chat("I approve merging #182");
     expect(card.draft).toMatchObject({ act: "github.pr.merge", res: [PR], uses: 1, aud: assistant });
@@ -245,5 +248,64 @@ describe("GitHub demo tool", () => {
     const input = { aud: assistant, owner: "adrianmross", repo: "okayed", number: 182, sha: SHA, grant: ev };
     expect(await mergeWithGrant(t.svc, { github: async () => "t" }, input, red)).toMatchObject({ ok: false, reason: expect.stringMatching(/checks have not passed/) });
     expect((await t.svc.snapshot()).grants[0]!.used).toBe(0);
+  });
+});
+
+describe("standing policies", () => {
+  async function fresh() {
+    t = setup();
+    await t.svc.claim();
+    assistant = (await t.svc.addAgent("assistant")).id;
+  }
+  const pr = (n: number) => `github:adrianmross/okayed/pull/${n}@${SHA}`;
+  async function ask(n: number) {
+    const r = await t.svc.submitRequest(assistant, { act: "github.pr.merge", res: [pr(n)] });
+    await settle();
+    return { r, st: await t.svc.requestStatus(assistant, r.request.id) };
+  }
+
+  it("the default posture merges when checks pass, and charges its budget", async () => {
+    await fresh();
+    const { r, st } = await ask(182);
+    expect(r.status).toBe("approving");
+    const opened = openGrantEvent(st!.grant!);
+    expect(opened.ok && opened.grant).toMatchObject({ when: [{ c: "checks.pass" }], assurance: { method: "policy", policy: ["posture:merge"] } });
+    expect((await t.svc.snapshot()).usage).toEqual({ "posture:merge": { uses: 1, risk: 8 } });
+  });
+
+  it("a spent budget asks, says what spent it, and topping up lets it continue", async () => {
+    await fresh();
+    for (let n = 1; n <= 5; n++) {
+      expect((await ask(n)).st!.status).toBe("granted");
+      await t.clock.advance(1);
+    }
+    const sixth = await ask(6);
+    expect(sixth.r.status).toBe("pending");
+    const card = (await t.svc.snapshot()).cards.find((c) => c.id === sixth.r.cardId)!;
+    expect(card.topUp).toBe("posture:merge");
+    expect(card.notes.join()).toMatch(/budget is spent: 5 auto-approvals using 40 risk, most recently PR #5 in adrianmross\/okayed; PR #4/);
+    await t.svc.topUp("posture:merge");
+    expect((await ask(7)).st!.status).toBe("granted");
+  });
+
+  it("a standing policy said in words takes over for its scope", async () => {
+    await fresh();
+    const card = await t.svc.chat("let assistant merge anything in okayed when checks pass for 2 weeks up to 30 merges");
+    expect(card.kind).toBe("policy");
+    await t.svc.confirm(card.id);
+    const { st } = await ask(200);
+    const opened = openGrantEvent(st!.grant!);
+    expect(opened.ok && opened.grant.assurance.policy?.[0]).toMatch(/^allow:github\.pr\.merge:/);
+    await t.clock.advance(14 * 86400);
+    // Past its horizon the posture applies again.
+    const later = await ask(201);
+    expect(openGrantEvent(later.st!.grant!).ok && openGrantEvent(later.st!.grant!)).toMatchObject({ grant: { assurance: { policy: ["posture:merge"] } } });
+  });
+
+  it("rules can be replaced directly, and bad ones are refused", async () => {
+    await fresh();
+    await expect(t.svc.setRules([{ id: "x", effect: "maybe", act: "github.read" }])).rejects.toThrow(/effect must be/);
+    await t.svc.setRules([{ id: "deny-all", effect: "deny", act: "*" }]);
+    expect((await ask(1)).st!.status).toBe("denied");
   });
 });

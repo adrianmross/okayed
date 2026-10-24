@@ -1,4 +1,4 @@
-import type { Beyond, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, Targets, UseCode } from "@okayed/engine";
+import type { Beyond, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, Targets, Usage, UseCode } from "@okayed/engine";
 import type { Grant, NostrEvent } from "@okayed/grant";
 
 /** Everything okayed stores for one person, and the snapshot their browser sees. */
@@ -71,6 +71,8 @@ export interface Card {
   options?: string[];
   grantId?: string;
   closedReason?: string;
+  /** Set when a standing policy's spent budget is why this asks: the rule to top up. */
+  topUp?: string;
   drafter?: string;
 }
 
@@ -130,5 +132,7 @@ export interface Snapshot {
   chat: ChatMessage[];
   agents: { id: string; name: string; createdAt: number }[];
   targets: Targets;
+  /** What each standing policy has spent, by rule id. */
+  usage: Usage;
 }
 
