@@ -14,6 +14,7 @@ let draft = "";
 function actions(app: App): CardActions {
   const say = (text: string) => app.run("POST", "/chat", { text });
   return {
+    topUp: (c: Card) => app.run("POST", `/rules/${encodeURIComponent(c.topUp!)}/topup`, undefined, "Topped up. Okay this one, or the next request goes ahead on its own."),
     confirm: (c: Card) => app.run("POST", `/cards/${c.id}/confirm`, undefined, c.kind === "policy" ? "Policy updated." : "Okayed. Issuing the grant…"),
     deny: (c: Card) => app.run("POST", `/cards/${c.id}/deny`, undefined, "Denied."),
     // A question's option re-asks with your own words plus the choice, so the engine binds both.

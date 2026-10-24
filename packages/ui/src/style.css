@@ -59,7 +59,7 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--muted); margin: 8px 0 0; }
 
 /* Controls */
-.btn { border: 0; border-radius: 8px; padding: 6px 14px; background: var(--line); cursor: pointer; }
+.btn { border: 0; border-radius: 8px; padding: 6px 14px; background: var(--line); cursor: pointer; white-space: nowrap; }
 .btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn.quiet { background: transparent; color: var(--muted); }
 .btn:disabled { opacity: .45; cursor: default; }
