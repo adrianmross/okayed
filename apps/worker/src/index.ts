@@ -59,6 +59,8 @@ const INFO = {
     "POST /api/u/:user/stop | /resume": "owner: emergency stop / resume auto-approval",
     "POST /api/u/:user/agents": "owner: { name } → agent token (shown once)",
     "PUT /api/u/:user/targets": "owner: { repos?, sites? }",
+    "PUT /api/u/:user/policy": "owner: { rules } replaces your standing policies",
+    "POST /api/u/:user/rules/:rule/topup": "owner: reset what a standing policy has spent",
     "POST /api/u/:user/requests": "agent: { act, res[], why, ttl? }",
     "GET /api/u/:user/requests/:id?wait=10": "agent: status, and the grant event once issued",
     "POST /api/u/:user/tools/github/merge": "agent: { grant, owner, repo, number, sha } — merges using okayed's token",
@@ -128,10 +130,12 @@ export default {
     if (route === "POST /resume") return call("resume");
     if (route === "POST /agents") return call("addAgent", [b.name]);
     if (route === "PUT /targets") return call("setTargets", [b]);
+    if (route === "PUT /policy") return call("setRules", [b.rules]);
     let x: RegExpExecArray | null;
     if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/(confirm|deny)$/.exec(route))) return call(x[2] === "confirm" ? "confirm" : "deny", [x[1]]);
     if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(route))) return call("revoke", [x[1], b.reason]);
     if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decodeURIComponent(route)))) return call("removeAgent", [x[1]]);
+    if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decodeURIComponent(route)))) return call("topUp", [x[1]]);
     if ((x = /^DELETE \/rules\/(.+)$/.exec(decodeURIComponent(route)))) return call("removeRule", [x[1]]);
     return json({ error: "not found" }, 404);
   },

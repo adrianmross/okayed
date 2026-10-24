@@ -1,21 +1,24 @@
 import {
-  BASELINE,
   CATALOG,
   canonRes,
   checkUse,
   decideAll,
-  DEFAULT_USER_LAYER,
+  checkRule,
   describeRequestSentence,
   describeRule,
   fitsAction,
+  labelRes,
   narrowGrant,
   parseRes,
+  personalLayer,
   sentenceFor,
   type GrantDraft,
   type Layer,
   type Policy,
   type Request,
+  type Rule,
   type Targets,
+  type Usage,
 } from "@okayed/engine";
 import {
   buildGrant,
@@ -97,7 +100,7 @@ export class OkayedService implements FlowTarget {
       const token = `own_${this.d.random.hex(24)}`;
       const meta: Meta = { userId: this.d.userId, createdAt: this.d.clock.now(), ownerTokenHash: sha256Hex(token), paused: false };
       await tx.put("meta", meta);
-      await tx.put("layer", DEFAULT_USER_LAYER);
+      await tx.put("layer", personalLayer());
       await tx.put<Targets>("targets", { repos: [], prs: [], sites: [], agents: [] });
       return token;
     });
@@ -196,7 +199,8 @@ export class OkayedService implements FlowTarget {
       await this.learn(tx, request);
       const policy = await this.policy(tx);
       const targets = await this.targets(tx);
-      const result = narrowGrant({ utterance: "", proposal: request, requests: [request], targets, policy, now, select: request.id });
+      const usage = await this.usage(tx);
+      const result = narrowGrant({ utterance: "", proposal: request, requests: [request], targets, policy, now, select: request.id, usage });
       const rec: RequestRecord = { request, status: "pending" };
       await this.audit(tx, { type: "request", text: describeRequestSentence(request), ref: request.id, event });
       if (result.kind !== "grant") {
@@ -207,6 +211,11 @@ export class OkayedService implements FlowTarget {
         return { rec, card: null as Card | null, auto: false };
       }
       const card = grantCard(`c_${this.d.random.hex(8)}`, result, "request", now);
+      const spent = result.decision.layers.find((l) => l.spent && l.rule);
+      if (spent?.rule) {
+        card.topUp = spent.rule.id;
+        card.notes.push(await this.statement(tx, spent.rule));
+      }
       const auto = result.decision.verdict === "allow" && !meta.paused;
       if (auto) card.status = "confirming";
       rec.cardId = card.id;
@@ -253,7 +262,7 @@ export class OkayedService implements FlowTarget {
       const policy = await this.policy(tx);
       const targets = await this.targets(tx);
       const pending = draft.intent === "grant" ? await this.pendingRequests(tx, now) : [];
-      const card = chatCard(`c_${this.d.random.hex(8)}`, text, draft, { policy, targets, pending, now });
+      const card = chatCard(`c_${this.d.random.hex(8)}`, text, draft, { policy, targets, pending, now, usage: await this.usage(tx) });
       card.drafter = this.d.drafter.name;
       await tx.put(`card:${card.id}`, card);
       await this.say(tx, { role: "okayed", text: card.sentence, cardId: card.id });
@@ -276,12 +285,12 @@ export class OkayedService implements FlowTarget {
       if (!card) throw new OkayedError(404, "no such card");
       if (card.status !== "open") throw new OkayedError(409, `this card is ${card.status}`);
       if (card.kind === "policy") {
-        const layer = await tx.get<Layer>("layer") ?? DEFAULT_USER_LAYER;
+        const layer = await this.layer(tx);
         const next: Layer = { ...layer, rules: [...layer.rules.filter((r) => r.until === undefined || r.until > now), ...(card.rules ?? [])] };
         await tx.put("layer", next);
         card.status = "confirmed";
         await tx.put(`card:${cardId}`, card);
-        const event = await this.d.signer.sign(policyTemplate({ layers: [BASELINE, next] }, now));
+        const event = await this.d.signer.sign(policyTemplate({ layers: [next] }, now));
         await this.audit(tx, { type: "policy", text: `Policy changed: ${(card.ruleTexts ?? []).join("; ")}.`, ref: cardId, event });
         return card;
       }
@@ -366,9 +375,37 @@ export class OkayedService implements FlowTarget {
     });
   }
 
+  /** Replaces the person's rules wholesale, as an editor would. Each rule is checked; the posture is a fine reset. */
+  async setRules(rules: unknown): Promise<Rule[]> {
+    if (!Array.isArray(rules)) throw new OkayedError(400, "rules must be a list");
+    const problems = rules.flatMap((r, i) => checkRule(r).map((p) => `rule ${i + 1}: ${p}`));
+    if (problems.length) throw new OkayedError(400, problems.join("; "));
+    const now = this.d.clock.now();
+    const next = personalLayer(rules as Rule[]);
+    const event = await this.d.signer.sign(policyTemplate({ layers: [next] }, now));
+    await this.d.store.transaction(async (tx) => {
+      await tx.put("layer", next);
+      await this.audit(tx, { type: "policy", text: `Policy replaced: ${next.rules.length} rule(s).`, event });
+    });
+    return next.rules;
+  }
+
+  /** Resets what a policy has spent, so it can auto-approve again. One decision over everything it already did. */
+  async topUp(ruleId: string): Promise<void> {
+    await this.d.store.transaction(async (tx) => {
+      const rule = (await this.layer(tx)).rules.find((r) => r.id === ruleId);
+      if (!rule?.budget) throw new OkayedError(404, "no budgeted rule with that id");
+      const usage = await this.usage(tx);
+      const before = usage[ruleId] ?? { uses: 0, risk: 0 };
+      delete usage[ruleId];
+      await tx.put("usage", usage);
+      await this.audit(tx, { type: "policy", text: `Topped up “${describeRule(rule, this.d.clock.now())}” after ${before.uses} auto-approval(s), ${before.risk} risk.`, ref: ruleId });
+    });
+  }
+
   async removeRule(ruleId: string): Promise<void> {
     await this.d.store.transaction(async (tx) => {
-      const layer = (await tx.get<Layer>("layer")) ?? DEFAULT_USER_LAYER;
+      const layer = await this.layer(tx);
       const rule = layer.rules.find((r) => r.id === ruleId);
       if (!rule) throw new OkayedError(404, "no such rule");
       await tx.put("layer", { ...layer, rules: layer.rules.filter((r) => r.id !== ruleId) });
@@ -436,6 +473,12 @@ export class OkayedService implements FlowTarget {
     if (card.status !== "confirming") return null;
     const ttl = card.ttl ?? card.draft.exp - card.draft.nbf;
     const draft: GrantDraft = { ...card.draft, nbf: now, exp: now + ttl };
+    const ctx = { agent: draft.aud };
+    // A policy approval names the policies it draws on; the transaction below re-checks them before charging.
+    if (assurance.method === "policy") {
+      const planned = decideAll(await this.policy(this.d.store), draft.act, draft.res, now, { ...ctx, usage: await this.usage(this.d.store) });
+      assurance = { ...assurance, policy: planned.charges.map((c) => c.rule) };
+    }
     const grant = buildGrant(draft, this.d.signer.pubkey, assurance, this.d.random.hex(8));
     const event = await this.d.signer.sign(grantTemplate(grant));
 
@@ -451,9 +494,18 @@ export class OkayedService implements FlowTarget {
         return null;
       };
       if (assurance.method === "policy" && meta.paused) return close("auto-approval is paused after an emergency stop");
-      const decision = decideAll(await this.policy(tx), draft.act, draft.res, now);
+      const usage = await this.usage(tx);
+      const decision = decideAll(await this.policy(tx), draft.act, draft.res, now, { ...ctx, usage });
       if (decision.verdict === "deny") return close(decision.reason);
-      if (assurance.method === "policy" && decision.verdict !== "allow") return close("policy no longer auto-approves this");
+      if (assurance.method === "policy") {
+        if (decision.verdict !== "allow") return close("policy no longer auto-approves this");
+        if (decision.charges.map((c) => c.rule).join() !== (assurance.policy ?? []).join()) return close("the policies changed while this was being issued");
+        for (const c of decision.charges) {
+          const u = usage[c.rule] ?? { uses: 0, risk: 0 };
+          usage[c.rule] = { uses: u.uses + 1, risk: u.risk + c.cost };
+        }
+        await tx.put("usage", usage);
+      }
       let req: RequestRecord | undefined;
       if (draft.from.request) {
         req = await tx.get<RequestRecord>(`req:${draft.from.request}`);
@@ -477,7 +529,7 @@ export class OkayedService implements FlowTarget {
           }
         }
       }
-      const how = assurance.method === "policy" ? "auto-approved by your policy" : `confirmed (${assurance.method})`;
+      const how = assurance.method === "policy" ? `auto-approved by your policy (${(assurance.policy ?? []).join(", ") || "no budget"})` : `confirmed (${assurance.method})`;
       await this.audit(tx, { type: "grant", text: `Issued, ${how}: ${sentenceFor(draft)}`, ref: grant.id, event });
       return { grantId: grant.id, exp: grant.exp };
     });
@@ -511,7 +563,7 @@ export class OkayedService implements FlowTarget {
   async snapshot(): Promise<Snapshot> {
     const s = this.d.store;
     const who = { userId: this.d.userId, issuer: this.d.signer.pubkey, drafter: this.d.drafter.name };
-    return buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), this.d.clock.now());
+    return buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), await this.usage(s), this.d.clock.now());
   }
 
   async events(): Promise<NostrEvent[]> {
@@ -585,7 +637,26 @@ export class OkayedService implements FlowTarget {
   }
 
   private async policy(tx: Pick<Store, "get">): Promise<Policy> {
-    return { layers: [BASELINE, (await tx.get<Layer>("layer")) ?? DEFAULT_USER_LAYER] };
+    const ceiling = await tx.get<Layer>("ceiling");
+    return { layers: [...(ceiling ? [ceiling] : []), await this.layer(tx)] };
+  }
+
+  private async layer(tx: Pick<Store, "get">): Promise<Layer> {
+    return (await tx.get<Layer>("layer")) ?? personalLayer();
+  }
+
+  private async usage(tx: Pick<Store, "get">): Promise<Usage> {
+    return (await tx.get<Usage>("usage")) ?? {};
+  }
+
+  /** What spent a policy's budget: the last few grants it auto-approved, so topping it up is one informed decision. */
+  private async statement(tx: Pick<Store, "list" | "get">, rule: Rule): Promise<string> {
+    const spentBy = [...(await tx.list<GrantRecord>("grant:")).values()]
+      .filter((g) => g.grant.assurance.policy?.includes(rule.id))
+      .sort((a, b) => b.grant.nbf - a.grant.nbf);
+    const u = (await this.usage(tx))[rule.id] ?? { uses: 0, risk: 0 };
+    const recent = spentBy.slice(0, 3).map((g) => g.grant.res.map((r) => labelRes(r).replace(/ at [0-9a-f]{7}$/, "")).join(" and "));
+    return `Its budget is spent: ${u.uses} auto-approval${u.uses === 1 ? "" : "s"} using ${u.risk} risk${recent.length ? `, most recently ${recent.join("; ")}` : ""}. Top it up to let it continue.`;
   }
 
   private async targets(tx: Pick<Store, "get">): Promise<Targets> {

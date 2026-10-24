@@ -24,7 +24,7 @@ import type { Env } from "./env.ts";
 export type ApiReply = { status: number; body: unknown };
 
 /** Methods the HTTP router may call, by who is calling. */
-const OWNER = ["snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "events"] as const;
+const OWNER = ["snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "topUp", "events"] as const;
 const AGENT = ["submitRequest", "requestStatus", "merge"] as const;
 const PUBLIC = ["verify", "issuer"] as const;
 export type OwnerMethod = (typeof OWNER)[number];
@@ -173,6 +173,10 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
         return this.reply(() => s.setTargets((a[0] ?? {}) as never));
       case "removeRule":
         return this.reply(() => s.removeRule(String(a[0])));
+      case "setRules":
+        return this.reply(() => s.setRules(a[0]));
+      case "topUp":
+        return this.reply(() => s.topUp(String(a[0])));
       case "events":
         return this.reply(() => s.events());
     }

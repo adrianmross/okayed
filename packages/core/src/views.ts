@@ -1,4 +1,4 @@
-import { describeRule, lint, sentenceFor, type Layer, type Policy, type Targets } from "@okayed/engine";
+import { describeRule, lint, sentenceFor, type Layer, type Policy, type Targets, type Usage } from "@okayed/engine";
 import { draftOf } from "./cards.ts";
 import type { Store } from "./ports.ts";
 import type { AgentRecord, AuditEntry, Card, ChatMessage, GrantRecord, Meta, RequestRecord, Snapshot } from "./records.ts";
@@ -16,6 +16,7 @@ export async function buildSnapshot(
   meta: Meta,
   policy: Policy,
   targets: Targets,
+  usage: Usage,
   now: number,
 ): Promise<Snapshot> {
   const expiredIf = <T extends { status: string }>(r: T, lapsed: boolean): T => (lapsed ? { ...r, status: "expired" } : r);
@@ -31,7 +32,7 @@ export async function buildSnapshot(
   const agents = (await all<AgentRecord>(store, "agent:")).map(({ id, name, createdAt }) => ({ id, name, createdAt }));
   const describe = (l: Layer) => ({
     layer: l.name,
-    rules: l.rules.map((r) => ({ id: r.id, text: describeRule(r, now), effect: r.effect, ...(r.until !== undefined ? { until: r.until } : {}) })),
+    rules: l.rules.map((r) => ({ id: r.id, text: describeRule(r, now, usage), effect: r.effect, ...(r.until !== undefined ? { until: r.until } : {}) })),
   });
   return {
     ...who,
@@ -46,5 +47,6 @@ export async function buildSnapshot(
     chat: (await store.get<ChatMessage[]>("chat")) ?? [],
     agents,
     targets,
+    usage,
   };
 }
