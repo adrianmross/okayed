@@ -43,20 +43,42 @@ okayed sits between the sentence and the tool:
 
 ## Policy model
 
-A policy is a stack of **layers**, from top to bottom: `okayed` (built-in baseline, `default: deny`), then `user`
-(what the person sets in chat), then optionally `session`. Each layer holds rules:
+Policy is **standing authority**: what an agent may do again and again, within bounds the person picks. The engine
+draws the same line for every kind of grant. A policy decides whether a use needs the person, and every use is
+still issued as its own exact, once-only grant pinned to its target.
+
+A policy is a stack of **layers**: optionally an organization's or community's ceiling, then the person's own layer.
+Each layer holds rules:
 
 ```ts
-{ effect: "allow" | "ask" | "deny", act: "github.read*", res?: "github:adrianmross/**",
-  maxTtl?: seconds, maxUses?: n, until?: unix }
+{ id, effect: "allow" | "ask" | "deny",
+  act: "github.pr.merge", res?: "github:adrianmross/okayed/**", agent?: "agent:assistant",
+  from?: unix, until?: unix,               // the horizon
+  budget?: { uses?: n, risk?: n },         // totals across every grant it auto-approves
+  when?: [{ c: "checks.pass" }],           // conditions every grant under it must carry
+  maxTtl?: seconds, maxUses?: n }          // caps on each grant
 ```
 
-- Within a layer, the **most specific** matching rule wins; on a tie, the strictest one wins (deny > ask > allow).
-  A layer with no matching rule abstains, except the top layer, which denies.
-- Across layers, the **strictest verdict wins**, so a layer can only narrow the one above it. A lower `allow` under
-  a higher `ask` has no effect, and the linter says so.
-- The reason names the first layer that refuses ("okayed: spending money always needs your okay"). Caps (`maxTtl`,
-  `maxUses`) are the minimum across layers.
+- Within a layer, the **most specific** matching rule wins (action, then resource, then agent). On a tie, the
+  strictest one wins (deny > ask > allow). A layer with no matching rule falls back to its default; the person's
+  layer asks.
+- Across layers, the **strictest verdict wins**, so a layer can only narrow the one above it. The reason names the
+  first layer that refused or asked. Per-grant caps are the minimum across layers.
+- **Budgets.** Each action has a risk cost (low 1, medium 3, high 8, critical 20; a production deploy counts as
+  high). An `allow` whose budget can't cover the next use asks instead. The card says what spent the budget, and a
+  top-up resets it in one decision. Counters live in the person's Durable Object and are charged in the same
+  transaction that issues the grant.
+- **Default posture ("balanced").** New users start with ordinary rules in their own layer, which they can edit or
+  delete:
+  - reads go ahead
+  - comments go ahead, up to 20
+  - merges go ahead when checks pass, within a 40-risk budget (five merges)
+  - staging and preview deploys go ahead, within a budget
+  - production deploys and spending ask
+- **From words.** "let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges" becomes a
+  standing policy with an agent, a repo scope, a condition, a horizon and a count. The model's draft can't widen any
+  of these. A risky standing allow with no end and no count becomes a question ("for how long, or how many
+  times?"), not a refusal. "Forever" is the person's call, and the linter says so.
 
 ## Components
 

@@ -72,6 +72,7 @@ cuts, and the cut is shown on the card ("asked for X, granted Y, refused Z becau
 | Least privilege by construction: exact targets, shortest reasonable lifetime, fewest uses | `engine/src/narrow.ts`, `engine/src/catalog.ts` |
 | Never broader than what the person said. Every pinned value comes from their words or the one request they point at | `engine/src/anchors.ts`, `narrowGrant` |
 | Ambiguity is a question ("Which site?", "Which environment?", "Which commit?") | `bind` / `bindFromWords` in `narrow.ts` |
+| Standing policies for repeat actions, bounded by horizon, count, risk budget and conditions; each use is still its own exact grant | `engine/src/policy.ts`, `core/src/service.ts` |
 | Layered policy: each layer can only narrow the one above; the reason names the first layer that refuses | `engine/src/policy.ts` |
 | "Once" means exactly one use: the Durable Object decrements inside a storage transaction | `OkayedService.verify` |
 | Revocable at any time; expiry enforced by the Workflow and by verifiers | `core/src/flow.ts`, `engine/src/use.ts` |
@@ -79,6 +80,22 @@ cuts, and the cut is shown on the card ("asked for X, granted Y, refused Z becau
 
 The grant format (JSON, JCS-hashed id, signed as a Nostr event, kinds 4840–4844 and 34840) is specified in
 [`docs/grant-format.md`](docs/grant-format.md). The design notes are in [`docs/design.md`](docs/design.md).
+
+## Standing policies
+
+A one-time okay is the narrow case. Most of the time you want an agent to get on with things:
+
+> “let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges”
+
+That becomes a standing policy: agent `assistant`, repo `adrianmross/okayed`, condition `checks.pass`, a 14-day horizon
+and a budget of 30. Each merge under it is auto-approved as its own once-only grant, pinned to the PR's head commit.
+The grant names the policy that allowed it, and the policy's budget is charged when the grant is issued. When the
+budget runs out, the next merge asks you, the card says what spent it, and one tap tops it up.
+
+New users start with a **balanced posture**: reads and comments go ahead, merges go ahead when checks pass (within a
+budget), staging deploys go ahead, and production deploys and spending ask. All of these are ordinary rules you can
+change in the Policy tab, by tapping a pill, or in words. The model's draft of a policy can't widen what you said,
+and a risky policy with no end and no count makes okayed ask “for how long, or how many times?”.
 
 ## Repository layout
 
