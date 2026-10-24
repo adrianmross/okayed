@@ -54,7 +54,7 @@ Every event's `content` is the [JCS](https://www.rfc-editor.org/rfc/rfc8785) ser
 | `exp` | unix s | Not valid at or after. Must also be the `expiration` tag. |
 | `uses` | int ≥ 1 | How many times it may be used. There is no "unlimited". |
 | `risk` | `low` \| `medium` \| `high` \| `critical` | Computed by the engine, not by the model. |
-| `assurance` | `{method, at, proof?}` | How the person confirmed: `policy` (auto-approved by a rule), `web-click`; later `webauthn`, `approver` with `proof`. |
+| `assurance` | `{method, at, proof?, policy?}` | How the person confirmed: `web-click` today, later `webauthn` or `approver` with `proof`. For `policy` (auto-approved by a standing policy), `policy` lists the ids of the rules that allowed it and were charged for it. |
 | `from` | `{utterance, request}` | The person's words, and the request id it answers (`null` for a pre-approval). For audit only; never used to decide. |
 | `nonce` | hex(8+) | Makes otherwise identical grants distinct. |
 
@@ -116,8 +116,19 @@ Request    { v: 0, id, aud, act, res: string[], why: string, at, exp }
 Revoke     { v: 0, grant: id, reason: string, at }
 UseReceipt { v: 0, grant: id, use: n, left: n, act, res, at }
 Stop       { v: 0, reason: string, at }
-Policy     { v: 0, layers: [{ name, default: "deny" | "abstain", rules: Rule[] }], at }
-Rule       { id, effect: "allow" | "ask" | "deny", act, res?, maxTtl?, maxUses?, until?, note? }
+Policy     { v: 0, layers: [{ name, default: "allow" | "ask" | "deny" | "abstain", rules: Rule[] }], at }
+Rule       { id, effect: "allow" | "ask" | "deny", act, res?, agent?,
+             from?, until?,                  // horizon
+             budget?: { uses?, risk? },      // totals across auto-approvals
+             when?: Condition[],             // carried by every grant issued under it
+             maxTtl?, maxUses?,              // caps on each grant
+             note? }
+```
+
+Risk costs for budgets: `low` 1, `medium` 3, `high` 8, `critical` 20. A policy event (kind 34840) is signed whenever
+the person's rules change. What each rule has spent is service state, not part of any event.
+
+```
 ```
 
 ## Verifying a use
