@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BASELINE, narrowGrant, summarize, type NarrowInput, type Policy } from "../src/index.ts";
+import { narrowGrant, summarize, type NarrowInput, type Policy } from "../src/index.ts";
 import { deployReq, mergeReq, NOW, policy, SHA, SHA2, targets } from "./fixtures.ts";
 
 const PR = `github:adrianmross/okayed/pull/182@${SHA}`;
@@ -204,20 +204,20 @@ describe("narrowGrant: pre-approvals bound from words", () => {
 
 describe("narrowGrant: policy", () => {
   it("drops what a layer denies and names the layer", () => {
-    const p: Policy = { layers: [BASELINE, { name: "you", default: "ask", rules: [{ id: "d", effect: "deny", act: "site.deploy", res: "site:*/production" }] }] };
+    const p: Policy = { layers: [{ name: "you", default: "ask", rules: [{ id: "d", effect: "deny", act: "site.deploy", res: "site:*/production" }] }] };
     const r = run("deploy openmeadow", {}, { requests: [deployReq], policy: p });
     expect(r).toMatchObject({ kind: "refuse", reason: expect.stringMatching(/^Refused by you/) });
   });
 
   it("applies policy caps", () => {
-    const p: Policy = { layers: [BASELINE, { name: "you", default: "ask", rules: [{ id: "c", effect: "ask", act: "site.deploy", maxTtl: 120 }] }] };
+    const p: Policy = { layers: [{ name: "you", default: "ask", rules: [{ id: "c", effect: "ask", act: "site.deploy", maxTtl: 120 }] }] };
     const r = grant(run("deploy openmeadow to staging for an hour", {}, { requests: [], policy: p }));
     expect(r.draft.exp - r.draft.nbf).toBe(120);
     expect(r.beyond[0]).toMatchObject({ field: "ttl", why: expect.stringMatching(/policy caps/) });
   });
 
   it("reports auto-approval in the decision", () => {
-    const p: Policy = { layers: [BASELINE, { name: "you", default: "ask", rules: [{ id: "r", effect: "allow", act: "github.read" }] }] };
+    const p: Policy = { layers: [{ name: "you", default: "ask", rules: [{ id: "r", effect: "allow", act: "github.read" }] }] };
     const r = grant(run("let assistant read okayed", {}, { requests: [], policy: p }));
     expect(r.draft).toMatchObject({ act: "github.read", res: ["github:adrianmross/okayed"], uses: 50 });
     expect(r.decision.verdict).toBe("allow");

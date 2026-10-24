@@ -9,6 +9,10 @@ export interface Condition {
   v?: string | number;
 }
 
+/**
+ * A standing policy: what an agent may do repeatedly, and within which bounds. Every use under an `allow` rule is
+ * still issued as its own exact, once-only grant; the rule only decides whether that grant needs the person.
+ */
 export interface Rule {
   id: string;
   effect: Effect;
@@ -16,12 +20,32 @@ export interface Rule {
   act: string;
   /** Resource pattern: `*` matches one segment, `**` the rest. Omitted means any. */
   res?: string;
+  /** Agent pattern, e.g. `agent:assistant`. Omitted means any of the person's agents. */
+  agent?: string;
+  /** Longest life of each grant issued under this rule, seconds. */
   maxTtl?: number;
+  /** Most uses of each grant issued under this rule. */
   maxUses?: number;
-  /** The rule stops applying at this time. */
+  /** The rule applies from this time (inclusive)… */
+  from?: Unix;
+  /** …until this time (exclusive). Together, its horizon. */
   until?: Unix;
+  /** Totals across every grant this rule auto-approves. Once spent, the next one asks the person. */
+  budget?: Budget;
+  /** Conditions every grant issued under this rule must carry, e.g. `checks.pass`. */
+  when?: Condition[];
   note?: string;
 }
+
+export interface Budget {
+  /** How many grants it may auto-approve in all. */
+  uses?: number;
+  /** How much risk it may spend in all; each action costs `riskCost` of its risk. */
+  risk?: number;
+}
+
+/** What each rule has spent so far, by rule id. Kept by the caller; the engine only reads it. */
+export type Usage = Record<string, { uses: number; risk: number }>;
 
 export interface Layer {
   name: string;

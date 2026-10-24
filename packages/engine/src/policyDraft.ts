@@ -1,12 +1,13 @@
 import { policyClauses, type PolicyClause } from "./anchors.ts";
 import { CATALOG, riskAtLeast } from "./catalog.ts";
+import { shortDuration } from "./format.ts";
 import { lint, type LintWarning } from "./policy.ts";
-import { isPattern, matchAct } from "./resource.ts";
-import type { Beyond, Effect, Layer, Policy, Rule, Targets, Unix } from "./types.ts";
+import { matchAct } from "./resource.ts";
+import type { Beyond, Condition, Effect, Layer, Policy, Rule, Targets, Unix } from "./types.ts";
 
 export interface PolicyDraftInput {
   utterance: string;
-  /** The model's draft: `{ rules: [{ effect, act, res?, ttl?, maxTtl?, maxUses? }] }`. Untrusted. */
+  /** The model's draft: `{ rules: [...] }` with the fields of `DraftRule`. Untrusted. */
   proposal: unknown;
   policy: Policy;
   /** Name of the layer the person edits. */
@@ -19,72 +20,89 @@ export type PolicyDraftResult =
   | { kind: "policy"; rules: Rule[]; layer: Layer; policy: Policy; beyond: Beyond[]; notes: string[]; warnings: LintWarning[] }
   | { kind: "question"; question: string; options: string[]; beyond: Beyond[] };
 
-const STRICT: Record<Effect, number> = { allow: 0, ask: 1, deny: 2 };
-/** Auto-approval rules expire; the person can always say it again. */
-export const DEFAULT_ALLOW_LIFETIME = 8 * 3600;
-export const MAX_ALLOW_LIFETIME = 24 * 3600;
-
-interface RawRule {
-  effect?: unknown;
-  act?: unknown;
-  res?: unknown;
-  ttl?: unknown;
-  maxTtl?: unknown;
-  maxUses?: unknown;
+/** A standing policy as the model may draft it. Every bound is optional and can only narrow what was said. */
+export interface DraftRule {
+  effect: Effect;
+  act: string;
+  res?: string;
+  agent?: string;
+  /** How long the policy stands, seconds. */
+  ttl?: number;
+  /** Total auto-approvals, and total risk. */
+  uses?: number;
+  risk?: number;
+  /** Per-grant caps. */
+  maxTtl?: number;
+  maxUses?: number;
+  when?: Condition[];
 }
+
+const STRICT: Record<Effect, number> = { allow: 0, ask: 1, deny: 2 };
+/** The longest a standing policy stands unless the person says "forever". */
+export const MAX_HORIZON = 30 * 86400;
+const KNOWN_CONDITIONS = new Set(["checks.pass"]);
+
+const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) && x > 0 ? Math.floor(x) : undefined);
+const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x.trim() : undefined);
 
 function clauseFor(act: string, clauses: PolicyClause[]): PolicyClause | undefined {
-  return (
-    clauses.find((c) => c.effect && c.acts.some((x) => x === act || matchAct(x, act) || matchAct(act, x))) ??
-    clauses.find((c) => c.effect && c.everything)
-  );
+  return clauses.find((c) => c.effect && c.acts.some((x) => x === act || matchAct(x, act) || matchAct(act, x))) ?? clauses.find((c) => c.effect && c.everything);
 }
 
-function hours(s: number): string {
-  return s >= 3600 && s % 3600 === 0 ? `${s / 3600} h` : `${Math.round(s / 60)} min`;
+/** The narrowest resource pattern a clause names: a repo, a site's environment, an environment anywhere. */
+function clauseScope(c: PolicyClause): string | undefined {
+  if (c.repos.length === 1) return `github:${c.repos[0]}/**`;
+  if (c.sites.length === 1) return c.envs.length === 1 ? `site:${c.sites[0]}/${c.envs[0]}` : `site:${c.sites[0]}/*`;
+  if (c.envs.length === 1) return `site:*/${c.envs[0]}`;
+  return undefined;
+}
+
+/** True if pattern `a` covers no more than pattern `b`. */
+function within(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (b.endsWith("/**")) return a === b.slice(0, -3) || a.startsWith(b.slice(0, -2));
+  if (b.endsWith("/*")) return a.startsWith(b.slice(0, -1)) && !a.slice(b.length - 1).includes("/");
+  if (b.startsWith("site:*/")) return /^site:[^/*]+\//.test(a) && a.endsWith(b.slice(6));
+  return false;
 }
 
 /**
- * Turns a model's policy draft into rules for the person's layer, keeping only what each clause of the sentence
- * says: the action family named, an effect no looser than the words, a lifetime for auto-approvals, and no
- * auto-approval of high-risk actions.
+ * Turns a model's policy draft into standing policies for the person's layer, kept to what each clause of the
+ * sentence says: the actions it names, an effect no looser than its words, its targets, its agent, its duration and
+ * count. A risky auto-approval with no end and no count is a question, not a guess; "forever" is the person's call.
  */
 export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
+  const { now } = input;
   const clauses = policyClauses(input.utterance, input.targets);
   const beyond: Beyond[] = [];
   const notes: string[] = [];
-  const raw = (input.proposal && typeof input.proposal === "object" ? (input.proposal as { rules?: unknown }).rules : undefined) ?? [];
-  const drafts: RawRule[] = Array.isArray(raw) ? raw.filter((r) => r && typeof r === "object") : [];
+  const raw = input.proposal && typeof input.proposal === "object" ? (input.proposal as { rules?: unknown }).rules : undefined;
+  const drafts = (Array.isArray(raw) ? raw : []).filter((r): r is Record<string, unknown> => !!r && typeof r === "object");
 
   if (!clauses.some((c) => c.effect)) {
-    return {
-      kind: "question",
-      question: "Should the agent be allowed, asked about, or refused? Try \"auto-approve …\", \"ask me before …\" or \"never …\".",
-      options: [],
-      beyond,
-    };
+    return { kind: "question", question: "Should the agent be allowed, asked about, or refused? Try “auto-approve …”, “ask me before …” or “never …”.", options: [], beyond };
   }
 
   const rules: Rule[] = [];
   for (const d of drafts) {
-    const act = typeof d.act === "string" ? d.act.trim() : "";
+    const act = str(d.act) ?? "";
     const effect = d.effect === "allow" || d.effect === "ask" || d.effect === "deny" ? d.effect : undefined;
     if (!act || !effect) {
       beyond.push({ field: "act", asked: JSON.stringify(d).slice(0, 80), why: "not a rule okayed can read" });
       continue;
     }
-    const acts = Object.keys(CATALOG).filter((a) => matchAct(act, a));
-    if (acts.length === 0) {
+    if (!Object.keys(CATALOG).some((a) => matchAct(act, a))) {
       beyond.push({ field: "act", asked: act, why: "matches no action okayed knows" });
       continue;
     }
     const clause = clauseFor(act, clauses);
-    if (!clause || !clause.effect) {
+    if (!clause?.effect) {
       beyond.push({ field: "act", asked: `${effect} ${act}`, why: "you didn't mention this" });
       continue;
     }
+
+    // Action: no wider than the family the clause names.
     let finalAct = act;
-    // A clause that names a family can't be widened by the draft ("read-only GitHub" is not "github.*").
     if (clause.acts.length && !clause.acts.some((x) => matchAct(x, act))) {
       const narrower = clause.acts.find((x) => matchAct(act, x));
       if (!narrower) {
@@ -94,65 +112,90 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
       beyond.push({ field: "act", asked: act, granted: narrower, why: `you said ${narrower}, not all of ${act}` });
       finalAct = narrower;
     }
+
+    // Effect: no looser than the words.
     let finalEffect: Effect = effect;
     if (STRICT[effect] < STRICT[clause.effect]) {
-      beyond.push({ field: "effect", asked: effect, granted: clause.effect, why: `you said "${clause.text}"` });
+      beyond.push({ field: "effect", asked: effect, granted: clause.effect, why: `you said “${clause.text}”` });
       finalEffect = clause.effect;
     }
-    const covered = Object.keys(CATALOG).filter((a) => matchAct(finalAct, a));
-    if (finalEffect === "allow") {
-      const risky = covered.filter((a) => riskAtLeast(CATALOG[a]!.risk, "medium"));
-      if (risky.length) {
-        beyond.push({
-          field: "effect",
-          asked: `allow ${finalAct}`,
-          granted: risky.length === covered.length ? `ask ${finalAct}` : `allow ${covered.filter((a) => !risky.includes(a)).join(", ")}`,
-          why: "okayed only auto-approves low-risk, read-only actions",
-        });
-        if (risky.length === covered.length) finalEffect = "ask";
-        else finalAct = covered.filter((a) => !risky.includes(a))[0]!;
-      }
+    const rule: Rule = { id: `${finalEffect}:${finalAct}:${now.toString(36)}${rules.length}`, effect: finalEffect, act: finalAct, note: clause.text };
+
+    // Targets: within what the clause names; a draft may name less.
+    const scope = clauseScope(clause);
+    const asked = str(d.res);
+    if (asked && asked !== "**" && (!scope || within(asked, scope))) {
+      if (!asked.includes(":")) beyond.push({ field: "res", asked, why: "not a resource pattern" });
+      else rule.res = asked;
+    } else if (scope) {
+      if (asked && asked !== "**") beyond.push({ field: "res", asked, granted: scope, why: `you said ${scope}` });
+      rule.res = scope;
     }
-    const rule: Rule = { id: `${finalEffect}:${finalAct}:${input.now.toString(36)}${rules.length}`, effect: finalEffect, act: finalAct };
-    if (typeof d.res === "string" && d.res !== "**") {
-      const repos = clause.repos;
-      if (repos.length && !repos.some((r) => d.res === `github:${r}` || (d.res as string).startsWith(`github:${r}/`))) {
-        beyond.push({ field: "res", asked: d.res, granted: `github:${repos[0]}/**`, why: `you said ${repos[0]}` });
-        rule.res = `github:${repos[0]}/**`;
-      } else if (!repos.length && isPattern(d.res) === false && !d.res.startsWith("github:") && !d.res.startsWith("site:") && !d.res.startsWith("money:")) {
-        beyond.push({ field: "res", asked: d.res, why: "not a resource pattern" });
-      } else {
-        rule.res = d.res;
-      }
-    } else if (clause.repos.length === 1) {
-      rule.res = `github:${clause.repos[0]}/**`;
+
+    // Agent: the one the clause names; a draft can't pick another.
+    const agent = str(d.agent);
+    if (clause.agents.length === 1) {
+      if (agent && agent !== clause.agents[0]) beyond.push({ field: "aud", asked: agent, granted: clause.agents[0]!, why: `you said ${clause.agents[0]}` });
+      rule.agent = clause.agents[0]!;
+    } else if (agent && input.targets.agents.includes(agent)) {
+      rule.agent = agent;
     }
-    if (finalEffect === "allow") {
-      const said = clause.ttl;
-      const asked = typeof d.ttl === "number" ? d.ttl : undefined;
-      let life = said ?? DEFAULT_ALLOW_LIFETIME;
-      if (life > MAX_ALLOW_LIFETIME) {
-        beyond.push({ field: "until", asked: hours(life), granted: hours(MAX_ALLOW_LIFETIME), why: "auto-approval lasts at most a day" });
-        life = MAX_ALLOW_LIFETIME;
-      }
-      if (asked !== undefined && asked > life) beyond.push({ field: "until", asked: hours(asked), granted: hours(life), why: said ? `you said ${hours(said)}` : "auto-approval defaults to 8 h" });
-      else if (asked !== undefined && asked >= 60) life = asked;
-      if (said === undefined) notes.push(`Auto-approval for ${finalAct} lasts ${hours(life)}; say "for …" to change it.`);
-      rule.until = input.now + life;
+
+    // Duration: what was said, capped at the standing maximum unless the person said "forever".
+    const draftTtl = num(d.ttl);
+    let life = clause.ttl;
+    if (draftTtl !== undefined) {
+      if (life !== undefined && draftTtl > life) beyond.push({ field: "until", asked: shortDuration(draftTtl), granted: shortDuration(life), why: `you said ${shortDuration(life)}` });
+      else if (!clause.unbounded) life = draftTtl;
     }
-    if (typeof d.maxTtl === "number" && d.maxTtl > 0) rule.maxTtl = Math.floor(d.maxTtl);
-    if (typeof d.maxUses === "number" && d.maxUses > 0) rule.maxUses = Math.floor(d.maxUses);
-    rule.note = clause.text;
+    if (life !== undefined && life > MAX_HORIZON) {
+      beyond.push({ field: "until", asked: shortDuration(life), granted: shortDuration(MAX_HORIZON), why: "standing policies last at most 30 days unless you say “forever”" });
+      life = MAX_HORIZON;
+    }
+    if (life !== undefined) rule.until = now + life;
+
+    // Count: what was said; a draft may only lower it. A risk budget from the draft only narrows.
+    const draftUses = num(d.uses);
+    let uses = clause.uses;
+    if (draftUses !== undefined) {
+      if (uses !== undefined && draftUses > uses) beyond.push({ field: "uses", asked: String(draftUses), granted: String(uses), why: `you said ${uses}` });
+      else uses = draftUses;
+    }
+    const risk = num(d.risk);
+    if (finalEffect === "allow" && (uses !== undefined || risk !== undefined)) rule.budget = { ...(uses !== undefined ? { uses } : {}), ...(risk !== undefined ? { risk } : {}) };
+
+    // Per-grant caps and conditions: only narrow.
+    const maxTtl = num(d.maxTtl);
+    const maxUses = num(d.maxUses);
+    if (maxTtl !== undefined) rule.maxTtl = maxTtl;
+    if (maxUses !== undefined) rule.maxUses = maxUses;
+    const when = [...clause.conditions];
+    for (const c of Array.isArray(d.when) ? (d.when as unknown[]) : []) {
+      const name = c && typeof c === "object" ? str((c as { c?: unknown }).c) : undefined;
+      if (!name) continue;
+      if (!KNOWN_CONDITIONS.has(name)) beyond.push({ field: "when", asked: name, why: "not a condition verifiers can check" });
+      else if (!when.some((w) => w.c === name)) when.push({ c: name });
+    }
+    if (when.length && finalEffect === "allow") rule.when = when;
+
+    // A standing allow over risky actions needs an end, a count or an explicit "forever": ask rather than guess.
+    const risky = Object.keys(CATALOG).filter((a) => matchAct(finalAct, a) && riskAtLeast(CATALOG[a]!.risk, "high"));
+    if (finalEffect === "allow" && risky.length && rule.until === undefined && !rule.budget && !clause.unbounded) {
+      const what = CATALOG[risky[0]!]!.noun;
+      return {
+        kind: "question",
+        question: `For how long should agents keep ${what} without asking you, or how many times?`,
+        options: ["for 1 day", "for 1 week", "up to 10 times", "forever"],
+        beyond,
+      };
+    }
+    if (finalEffect === "allow" && rule.until === undefined && !rule.budget) notes.push(`“${clause.text}” has no end date; remove it any time under Policy.`);
     rules.push(rule);
   }
 
-  const layers = input.policy.layers.map((l) =>
-    l.name === input.layer ? { ...l, rules: [...l.rules.filter((r) => r.until === undefined || r.until > input.now), ...rules] } : l,
-  );
+  const layers = input.policy.layers.map((l) => (l.name === input.layer ? { ...l, rules: [...l.rules.filter((r) => r.until === undefined || r.until > now), ...rules] } : l));
   const layer = layers.find((l) => l.name === input.layer);
-  if (!layer) {
-    return { kind: "question", question: `There is no layer called ${input.layer}.`, options: input.policy.layers.map((l) => l.name), beyond };
-  }
+  if (!layer) return { kind: "question", question: `There is no layer called ${input.layer}.`, options: input.policy.layers.map((l) => l.name), beyond };
   const policy: Policy = { layers };
-  return { kind: "policy", rules, layer, policy, beyond, notes, warnings: lint(policy, input.now) };
+  return { kind: "policy", rules, layer, policy, beyond, notes, warnings: lint(policy, now).filter((w) => rules.some((r) => r.id === w.rule)) };
 }

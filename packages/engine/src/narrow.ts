@@ -4,7 +4,7 @@ import { CATALOG, fitsAction, riskOf, type ActionSpec } from "./catalog.ts";
 import { shortDuration, usesLabel } from "./format.ts";
 import { decideAll, type Decision } from "./policy.ts";
 import { canonRes, isPattern, labelRes, parseRes } from "./resource.ts";
-import type { Beyond, Condition, GrantDraft, Policy, Request, Targets, Unix } from "./types.ts";
+import type { Beyond, Condition, GrantDraft, Policy, Request, Targets, Unix, Usage } from "./types.ts";
 
 /** What the model proposed, coerced from untrusted JSON. Every field is optional and only ever narrows. */
 export interface Proposal {
@@ -27,6 +27,8 @@ export interface NarrowInput {
   now: Unix;
   /** A request picked by an unambiguous gesture (a button), bypassing word matching. */
   select?: string;
+  /** What each standing policy has spent, so a spent budget asks instead of allowing. */
+  usage?: Usage;
 }
 
 export type NarrowResult =
@@ -195,19 +197,23 @@ export function narrowGrant(input: NarrowInput): NarrowResult {
   let res = narrowTargets(base, p, a, beyond, notes);
   if (res.length === 0) return { kind: "refuse", reason: "Nothing is left once the environments you excluded are removed.", beyond };
 
-  // Policy: drop the targets it denies; the rest are decided together.
-  const denied = res.filter((r) => decideAll(input.policy, base.act, [r], input.now).verdict === "deny");
-  for (const r of denied) beyond.push({ field: "res", asked: r, why: decideAll(input.policy, base.act, [r], input.now).reason });
+  // Policy: drop the targets it denies; the rest are decided together, for this agent, against what's been spent.
+  const ctx = { agent: base.aud, ...(input.usage ? { usage: input.usage } : {}) };
+  const verdictOn = (rs: string[]) => decideAll(input.policy, base.act, rs, input.now, ctx);
+  const denied = res.filter((r) => verdictOn([r]).verdict === "deny");
+  for (const r of denied) beyond.push({ field: "res", asked: r, why: verdictOn([r]).reason });
   if (denied.length === res.length) {
-    const decision = decideAll(input.policy, base.act, res, input.now);
+    const decision = verdictOn(res);
     return { kind: "refuse", reason: decision.reason, beyond, decision };
   }
   res = res.filter((r) => !denied.includes(r));
-  const decision = decideAll(input.policy, base.act, res, input.now);
+  const decision = verdictOn(res);
 
   const ttl = lifetime(spec, a, p, decision, beyond);
   const uses = useCount(spec, a, p, decision, beyond);
+  // Conditions the deciding policies require ride on the grant too ("merges go ahead when checks pass").
   const when = conditions(base.act, a, p, input.now, beyond);
+  for (const c of decision.when) if (!when.some((w) => w.c === c.c && w.v === c.v)) when.push(c);
   if (p.aud !== undefined && p.aud !== base.aud) beyond.push({ field: "aud", asked: p.aud, granted: base.aud, why: `${sourceOf(base)} ${base.aud}` });
 
   const draft: GrantDraft = {

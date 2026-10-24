@@ -52,6 +52,7 @@ const UNITS: [RegExp, number][] = [
   [/^s(?:ec(?:ond)?s?)?$/, 1],
   [/^m(?:in(?:ute)?s?)?$/, 60],
   [/^h(?:(?:ou)?rs?)?$/, 3600],
+  [/^w(?:(?:ee)?ks?)?$/, 604800],
   [/^d(?:ays?)?$/, 86400],
 ];
 
@@ -148,7 +149,7 @@ export function extractAnchors(utterance: string, targets: Targets): Anchors {
     if (new RegExp(`\\b${name.replace(/[.]/g, "\\.")}\\b`).test(t)) a.agents.push(agent);
   }
 
-  const dur = /\bfor (?:the next |another |up to )?(\d+(?:\.\d+)?|an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|forty-five|half)(?: an?)? ?(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d)\b/.exec(t);
+  const dur = /\bfor (?:the next |another |up to )?(\d+(?:\.\d+)?|an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|forty-five|half)(?: an?)? ?(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|wks?|w)\b/.exec(t);
   if (dur) {
     const n = num(dur[1]!);
     const unit = UNITS.find(([re]) => re.test(dur[2]!))?.[1];
@@ -156,12 +157,12 @@ export function extractAnchors(utterance: string, targets: Targets): Anchors {
   } else if (/\bfor (?:the next |an? )?(?:hour)\b/.test(t)) {
     a.ttl = 3600;
   }
-  if (/\b(?:forever|permanent(?:ly)?|indefinitely|no expiry|never expires?|from now on|always)\b/.test(t)) a.unbounded = true;
+  if (/\b(?:forever|permanent(?:ly)?|indefinitely|no expiry|never expires?|from now on|until i say otherwise)\b/.test(t)) a.unbounded = true;
 
   const cond = /\b(?:once|if|when|after|as soon as)\s+(?:the\s+)?(?:ci|checks?|tests?|builds?)\b[^.;,]*?\b(?:pass(?:es|ed)?|green|succeed(?:s|ed)?|clear)/.test(t);
   if (cond) a.conditions.push({ c: "checks.pass" });
 
-  const times = /\b(\d+|one|two|three|four|five|ten) times\b/.exec(t);
+  const times = /\b(\d+|one|two|three|four|five|ten) times\b/.exec(t) ?? /\bup to (\d+|two|three|four|five|ten|twenty|thirty) (?:\w+ )?(?:times|merges|deploys|deployments|comments|reads|uses|requests|pull requests|prs)\b/.exec(t);
   if (times) a.uses = num(times[1]!);
   else if (/\btwice\b/.test(t)) a.uses = 2;
   else if (/\b(?:just )?once\b(?!\s+(?:the\s+)?(?:ci|checks?|tests?|builds?|it|they|that)\b)/.test(t) || /\bone time\b/.test(t)) a.uses = 1;
@@ -177,7 +178,16 @@ export interface PolicyClause {
   /** "anything", "everything" with no family: applies to all actions. */
   everything: boolean;
   repos: string[];
+  sites: string[];
+  envs: string[];
+  agents: string[];
+  conditions: Condition[];
+  /** How long the policy should stand, seconds. */
   ttl?: number;
+  /** How many times in all. */
+  uses?: number;
+  /** "forever", "from now on": the person chose no end. */
+  unbounded: boolean;
 }
 
 const EFFECTS: [Effect, RegExp][] = [
@@ -207,9 +217,10 @@ export function policyClauses(utterance: string, targets: Targets): PolicyClause
     if (/\bgithub\b/.test(text) && acts.length === 0) acts = ["github.*"];
     if (/\bread-only\b|\bread only\b/.test(text)) acts = ["github.read"];
     const everything = acts.length === 0 && /\b(?:anything|everything|all|any action)\b/.test(text);
-    const clause: PolicyClause = { text, acts, everything, repos: a.repos };
+    const clause: PolicyClause = { text, acts, everything, repos: a.repos, sites: a.sites, envs: a.envs, agents: a.agents, conditions: a.conditions, unbounded: a.unbounded };
     if (effect) clause.effect = effect;
     if (a.ttl !== undefined) clause.ttl = a.ttl;
+    if (a.uses !== undefined) clause.uses = a.uses;
     return clause;
   });
 }

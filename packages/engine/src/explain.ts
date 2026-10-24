@@ -1,8 +1,8 @@
 import { CATALOG } from "./catalog.ts";
 import { longDuration } from "./format.ts";
 import type { NarrowResult } from "./narrow.ts";
-import { labelRes, parseRes } from "./resource.ts";
-import type { Beyond, GrantDraft, Request, Rule, Unix } from "./types.ts";
+import { isPattern, labelRes, parseRes } from "./resource.ts";
+import type { Beyond, GrantDraft, Request, Rule, Unix, Usage } from "./types.ts";
 
 /**
  * Deterministic wording for cards. The model may add a friendlier sentence, but these lines are what the
@@ -73,10 +73,68 @@ export function summarize(result: NarrowResult): string {
   return parts.join(" ");
 }
 
-export function describeRule(r: Rule, now: Unix): string {
-  const verb = r.effect === "allow" ? "Auto-approve" : r.effect === "ask" ? "Ask before" : "Never allow";
-  const acts = r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act;
-  const where = r.res && r.res !== "**" ? ` on ${r.res}` : "";
-  const until = r.until ? (r.until > now ? ` for ${longDuration(r.until - now)}` : " (expired)") : "";
-  return `${verb} ${acts}${where}${until}`;
+/** A resource pattern the way people read it: "adrianmross/okayed", "staging on any site". */
+export function patternLabel(p: string): string {
+  if (p === "**" || p === "*") return "anything";
+  if (!isPattern(p)) return labelRes(p);
+  let m = /^github:([^/*]+)\/([^/*]+)\/\*\*$/.exec(p);
+  if (m) return `${m[1]}/${m[2]}`;
+  if ((m = /^github:([^/*]+)\/\*\*$/.exec(p))) return `any repo of ${m[1]}`;
+  if ((m = /^site:\*\/([^/*]+)$/.exec(p))) return `${m[1]} on any site`;
+  if ((m = /^site:([^/*]+)\/\*$/.exec(p))) return `any environment of ${m[1]}`;
+  return p;
+}
+
+/** A rule's parts, for UIs that show each as a pill. */
+export interface RuleParts {
+  effect: "Auto-approve" | "Ask before" | "Never allow";
+  what: string;
+  agent?: string;
+  where?: string;
+  only?: string;
+  /** "3 of 5 left", "24 of 40 risk left". */
+  budget?: string;
+  /** "for 2 weeks", "from Nov 3", "ended". */
+  horizon?: string;
+  /** Per-grant caps: "each grant up to 30 minutes". */
+  each?: string;
+}
+
+function day(t: Unix): string {
+  return new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+export function ruleParts(r: Rule, now: Unix, usage?: Usage): RuleParts {
+  const parts: RuleParts = {
+    effect: r.effect === "allow" ? "Auto-approve" : r.effect === "ask" ? "Ask before" : "Never allow",
+    what: r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act,
+  };
+  if (r.agent) parts.agent = r.agent.replace(/^agent:/, "");
+  if (r.res && r.res !== "**") parts.where = patternLabel(r.res);
+  if (r.when?.length) parts.only = r.when.map((c) => (c.c === "checks.pass" ? "checks pass" : c.c === "before" && typeof c.v === "number" ? `before ${day(c.v)}` : c.c)).join(" and ");
+  if (r.budget) {
+    const spent = usage?.[r.id] ?? { uses: 0, risk: 0 };
+    const bits: string[] = [];
+    if (r.budget.uses !== undefined) bits.push(`${Math.max(0, r.budget.uses - spent.uses)} of ${r.budget.uses} left`);
+    if (r.budget.risk !== undefined) bits.push(`${Math.max(0, r.budget.risk - spent.risk)} of ${r.budget.risk} risk left`);
+    parts.budget = bits.join(", ");
+  }
+  if (r.until !== undefined && r.until <= now) parts.horizon = "ended";
+  else if (r.from !== undefined && r.from > now) parts.horizon = `from ${day(r.from)}${r.until ? ` to ${day(r.until)}` : ""}`;
+  else if (r.until !== undefined) parts.horizon = `for ${longDuration(r.until - now)}`;
+  const each = [r.maxTtl !== undefined ? `up to ${longDuration(r.maxTtl)}` : "", r.maxUses !== undefined ? `${r.maxUses === 1 ? "once" : `${r.maxUses} uses`}` : ""].filter(Boolean);
+  if (each.length) parts.each = `each grant ${each.join(", ")}`;
+  return parts;
+}
+
+/** "Auto-approve merging pull requests for assistant in adrianmross/okayed, only if checks pass, 3 of 5 left, for 2 weeks". */
+export function describeRule(r: Rule, now: Unix, usage?: Usage): string {
+  const p = ruleParts(r, now, usage);
+  let s = `${p.effect} ${p.what}`;
+  if (p.agent) s += ` for ${p.agent}`;
+  if (p.where) s += ` in ${p.where}`;
+  const tail = [p.only ? `only if ${p.only}` : "", p.budget ?? "", p.each ?? ""].filter(Boolean);
+  if (tail.length) s += `, ${tail.join(", ")}`;
+  if (p.horizon) s += p.horizon === "ended" ? " (ended)" : ` ${p.horizon}`;
+  return s;
 }

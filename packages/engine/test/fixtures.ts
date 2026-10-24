@@ -1,4 +1,4 @@
-import { BASELINE, DEFAULT_USER_LAYER, type Policy, type Request, type Targets } from "../src/index.ts";
+import { personalLayer, type Policy, type Request, type Targets } from "../src/index.ts";
 
 export const NOW = 1_761_735_600;
 export const SHA = "3f9a1c2e4b5d6f708192a3b4c5d6e7f801234567";
@@ -14,7 +14,8 @@ export const targets: Targets = {
   agents: ["agent:assistant"],
 };
 
-export const policy: Policy = { layers: [BASELINE, DEFAULT_USER_LAYER] };
+/** Asks about everything, so narrowing is tested on its own; policy.test.ts covers the posture. */
+export const policy: Policy = { layers: [personalLayer([])] };
 
 export const mergeReq: Request = {
   id: "r_merge",
