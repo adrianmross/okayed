@@ -39,6 +39,7 @@ describe("extractAnchors", () => {
     expect(c.conditions).toEqual([{ c: "checks.pass" }]);
     expect(extractAnchors("deploy three times", targets).uses).toBe(3);
     expect(extractAnchors("deploy twice", targets).uses).toBe(2);
+    expect(extractAnchors("merge up to 10 pull requests", targets).uses).toBe(10);
   });
 
   it("reads durations and refuses to honor forever", () => {
@@ -47,6 +48,10 @@ describe("extractAnchors", () => {
     expect(extractAnchors("for the next 2 hours", targets).ttl).toBe(7200);
     expect(extractAnchors("for half an hour", targets).ttl).toBe(1800);
     expect(extractAnchors("forever", targets).unbounded).toBe(true);
+    expect(extractAnchors("for 2 weeks", targets).ttl).toBe(14 * 86400);
+    expect(extractAnchors("for a week", targets).ttl).toBe(7 * 86400);
+    // "always allow" is an effect, not a lifetime.
+    expect(extractAnchors("always allow reads", targets).unbounded).toBe(false);
   });
 
   it("finds repos by full name or known short name, not prose like and/or", () => {

@@ -22,6 +22,8 @@ describe("resources", () => {
     expect(matchRes("github:adrianmross/*", "github:adrianmross/okayed")).toBe(true);
     expect(matchRes("github:adrianmross/*", `github:adrianmross/okayed/pull/1@${SHA}`)).toBe(false);
     expect(matchRes("github:adrianmross/**", "github:adrianmrossx/okayed")).toBe(false);
+    expect(matchRes("github:adrianmross/matrix/**", "github:adrianmross/matrix")).toBe(true);
+    expect(matchRes("github:adrianmross/matrix/**", "github:adrianmross/matrixx")).toBe(false);
     expect(matchRes("site:*/staging", "site:openmeadow.org/production")).toBe(false);
     expect(matchRes(undefined, "anything-at-all")).toBe(true);
   });

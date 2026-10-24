@@ -72,6 +72,8 @@ export function matchRes(pattern: string | undefined, res: string): boolean {
   const canon = canonRes(res);
   if (!canon) return false;
   const p = pattern.startsWith("money:") ? pattern : pattern.toLowerCase();
+  // "x/**" means x and everything under it, so "github:o/matrix/**" covers the repo itself too.
+  if (p.endsWith("/**") && canon === p.slice(0, -3)) return true;
   const re = escape(p)
     .replace(/\*\*/g, "\u0000")
     .replace(/\*/g, "[^/@]*")

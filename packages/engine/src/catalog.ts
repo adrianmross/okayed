@@ -1,5 +1,5 @@
 import { parseRes, type Resource } from "./resource.ts";
-import type { Layer, Risk } from "./types.ts";
+import type { Layer, Policy, Risk, Rule } from "./types.ts";
 
 export interface ActionSpec {
   act: string;
@@ -118,21 +118,36 @@ export function fitsAction(act: string, res: string): boolean {
   return true;
 }
 
-/**
- * The built-in top layer: the most any user policy can allow. Reads can be auto-approved;
- * anything that changes the world needs the person; unknown actions are denied.
- */
-export const BASELINE: Layer = {
-  name: "okayed",
-  default: "deny",
-  rules: [
-    { id: "read", effect: "allow", act: "github.read", note: "reading GitHub can be auto-approved" },
-    { id: "comment", effect: "ask", act: "github.pr.comment", note: "comments need your okay" },
-    { id: "merge", effect: "ask", act: "github.pr.merge", maxUses: 1, note: "merges always need your okay" },
-    { id: "deploy", effect: "ask", act: "site.deploy", note: "deploys always need your okay" },
-    { id: "spend", effect: "ask", act: "spend.money", maxUses: 1, note: "spending money always needs your okay" },
-  ],
-};
+/** What one use of an action costs against a risk budget, by its risk. */
+export const RISK_COST: Record<Risk, number> = { low: 1, medium: 3, high: 8, critical: 20 };
 
-/** The person's layer before they've said anything: ask about everything. */
-export const DEFAULT_USER_LAYER: Layer = { name: "you", default: "ask", rules: [] };
+export function riskCost(act: string, res: string[]): number {
+  return RISK_COST[riskOf(act, res)];
+}
+
+/**
+ * The starting posture ("balanced"): reads and comments go ahead, merges go ahead when checks pass and staging
+ * deploys go ahead, each within a budget; production deploys and spending ask. These are ordinary rules in the
+ * person's own layer, so they can change or delete any of them.
+ */
+export const DEFAULT_POSTURE: Rule[] = [
+  { id: "posture:read", effect: "allow", act: "github.read", note: "reading GitHub goes ahead" },
+  { id: "posture:comment", effect: "allow", act: "github.pr.comment", budget: { uses: 20 }, note: "up to 20 comments, then ask" },
+  { id: "posture:merge", effect: "allow", act: "github.pr.merge", when: [{ c: "checks.pass" }], budget: { risk: 40 }, note: "merges go ahead when checks pass, within a budget" },
+  { id: "posture:staging", effect: "allow", act: "site.deploy", res: "site:*/staging", budget: { risk: 30 }, note: "staging deploys go ahead, within a budget" },
+  { id: "posture:preview", effect: "allow", act: "site.deploy", res: "site:*/preview", budget: { risk: 30 }, note: "preview deploys go ahead, within a budget" },
+  { id: "posture:production", effect: "ask", act: "site.deploy", res: "site:*/production", note: "production deploys ask you" },
+  { id: "posture:spend", effect: "ask", act: "spend.money", note: "spending money asks you" },
+];
+
+/** The person's layer. With nothing matching, it asks. */
+export const YOU = "you";
+
+export function personalLayer(rules: Rule[] = DEFAULT_POSTURE): Layer {
+  return { name: YOU, default: "ask", rules: rules.map((r) => ({ ...r })) };
+}
+
+/** A new person's policy: their own layer with the default posture. An organization may add a ceiling above it. */
+export function defaultPolicy(): Policy {
+  return { layers: [personalLayer()] };
+}
