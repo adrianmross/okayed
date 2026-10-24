@@ -3,6 +3,7 @@ import { ago, h } from "./dom.ts";
 import { block, cutBlocks, grantBlocks, layersTable, pill } from "./blocks.ts";
 
 export interface CardActions {
+  topUp?: (c: Card) => void;
   confirm?: (c: Card) => void;
   deny?: (c: Card) => void;
   pick?: (c: Card, option: string) => void;
@@ -39,6 +40,7 @@ export function cardView(c: Card, act: CardActions = {}): HTMLElement {
         { class: "actions" },
         act.confirm ? h("button", { class: "btn primary", type: "button", onclick: () => act.confirm!(c) }, c.kind === "policy" ? "Apply" : "Okay it") : null,
         act.deny ? h("button", { class: "btn", type: "button", onclick: () => act.deny!(c) }, "Deny") : null,
+        c.topUp && act.topUp ? h("button", { class: "btn", type: "button", onclick: () => act.topUp!(c) }, "Top up the budget") : null,
       ),
     );
   }

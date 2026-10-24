@@ -1,4 +1,4 @@
-import { allowsFor, doesNotAllowFor, humanDuration, narrowGrant, sentenceFor, summarize, type NarrowResult, BASELINE } from "@okayed/engine";
+import { allowsFor, doesNotAllowFor, humanDuration, narrowGrant, sentenceFor, summarize, type NarrowResult, personalLayer } from "@okayed/engine";
 import type { Card } from "@okayed/core";
 import { cardView, h, toast } from "@okayed/ui";
 import { DRAFTS, NOW, REQUESTS, SAYINGS, TARGETS } from "./data.ts";
@@ -61,7 +61,7 @@ export function narrowingSection(rerender: () => void): HTMLElement {
     // Malformed model output is just an empty draft to the engine.
   }
   const req = REQUESTS[state.request];
-  const result = narrowGrant({ utterance: state.said, proposal: draft, requests: req ? [req] : [], targets: TARGETS, policy: { layers: [BASELINE, { name: "you", default: "ask", rules: [] }] }, now: NOW });
+  const result = narrowGrant({ utterance: state.said, proposal: draft, requests: req ? [req] : [], targets: TARGETS, policy: { layers: [personalLayer([])] }, now: NOW });
   const said = h("input", { class: "field", value: state.said, "data-focus": "said", "aria-label": "What the person says", oninput: (e: Event) => ((state.said = (e.target as HTMLInputElement).value), rerender()) });
   const draftBox = h("textarea", { class: "field", rows: "8", spellcheck: "false", "data-focus": "draft", "aria-label": "Model draft", oninput: (e: Event) => ((state.draft = (e.target as HTMLTextAreaElement).value), (state.draftName = ""), rerender()) }, state.draft);
 
