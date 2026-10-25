@@ -1,0 +1,23 @@
+{
+  "name": "@okayed/mcp",
+  "version": "0.1.0",
+  "description": "An MCP server that lets an agent ask okayed before acting, and act through it without holding credentials.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "okayed-mcp": "./src/main.ts" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@okayed/client": "workspace:*",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}

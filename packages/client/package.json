@@ -1,0 +1,16 @@
+{
+  "name": "@okayed/client",
+  "version": "0.1.0",
+  "description": "A small client for agents and tools: ask okayed, wait for the grant, use it.",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}
