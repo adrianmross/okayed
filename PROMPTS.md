@@ -86,3 +86,75 @@ Even though this will support cloudflare first I’d appreicagd if you design fo
 
 No paid Cloudflare features were added. Workers, Durable Objects (SQLite), Workflows, the Workers AI free allocation
 and Pages are all available on the free plan.
+
+---
+
+## 2 — Branch name and attribution
+
+```text
+I don’t like the branch having a Claude preposition redo that. Is it already pushed? There should be no attribution.
+```
+
+The branch was renamed from `claude/okayed-v0` to `feat/okayed-v0`.
+
+## 3
+
+```text
+What is Wrangler?
+```
+
+## 5 — Status and visuals
+
+```text
+What more is there to complete? Can you not show me anything that you did or any artifacts or visuals and what’s completed? I’d like to understand the layers at a deeper level. I will probably have to go into the architecture of this.
+```
+
+```text
+Can you also /data:create-viz
+```
+
+This produced `docs/img/okayed-code-and-tests.png`, plus an architecture page and a 3-D explainer published outside the repo.
+
+## 6 — Simplify the UI, clean up, explain in 3-D
+
+```text
+OK, well let’s continue working and try to strive to simplify the visual web policy model using the same thing that we did for the playground and [redacted]. Clean up the code too to make it as clean as possible. And then I was kind of expecting. more like 3-D models to explain what’s happening and like learning models to help visualize the different layers and step also, the UI that you showed me in the web looks generated with the card highlight on the
+```
+
+Answers to the follow-up questions:
+
+- Web style: “Yes, match [redacted]”, the [redacted] pattern (one question with a Yes/No answer, flat blocks with tiles and pills, a Debug switch, no accent rails).
+- 3-D visuals: “Separate explainer page.”
+- Cleanup: “Everything, behavior frozen.”
+
+## 7 — Standing authority
+
+```text
+Cool but what happens when I do actually want the agent to be able to merge anything like a standing policy?
+```
+
+```text
+Depends on the policy that set up we can give reasonable default like a reasonable default posture, but leave it up to the user to create the policies that they want. I mean that’s a whole point of the policy engine, but you seem to have created. It’s like one time approval/grants and showing that as a policy using similar syntax, but the policy is for repeat actions you know either with an expiration or bounded for use of a couple times or bounded on risk and scored based risk there’s many ways to express it that we have implemented across [redacted].
+```
+
+Answers to the follow-up questions:
+
+- Starting posture: “Balanced.”
+- Wire format: “Own format”: okayed's own v0 format.
+
+## 8 — Budgets
+
+```text
+I don’t think risk budget needs to be enabled  by default and I think it could be global or local to single policies or actions or approvals. What is left to complete project continue doing that
+```
+
+### What came out of prompts 2–8
+
+| Commit | What |
+|---|---|
+| `fix(worker): refuse live-state sockets without the owner token` | Found while checking the WebSocket: the Agents SDK sent state before `onConnect`. |
+| `feat(ui): …`, `refactor(web): …`, `refactor(playground): …` | One shared component set after [redacted]; both UIs rebuilt on it. |
+| `refactor(engine): …`, `refactor(core): …`, `chore: …` | Binding split from narrowing; the service split into records, cards and views; unused code now fails typecheck. |
+| `feat(engine)!: standing policies …`, `feat(core): …`, `feat(ui): edit standing policies …` | Policies as standing authority: agent scope, horizon, per-grant caps, conditions, budgets, top-ups. The fixed ceiling became an editable default posture. |
+| `feat: make budgets opt-in, …` | No budgets by default; budgets on one policy or shared (global, one action, one agent), optionally counting your own okays. |
+| `docs: …` | Design and grant format kept current. |
