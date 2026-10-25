@@ -1,6 +1,6 @@
 {
   "name": "@okayed/playground",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,12 +10,21 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@okayed/core": "workspace:*",
+    "@okayed/design": "workspace:*",
     "@okayed/engine": "workspace:*",
-    "@okayed/ui": "workspace:*"
+    "lucide-react": "^1.64.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "ai": "^7.0.157",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^8.3.5"
   }
 }

@@ -2,13 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>okayed playground</title>
-    <meta name="description" content="Write a policy, ask a question, and watch okayed's engine narrow a plain-language approval into an exact grant." />
+    <meta name="description" content="Ask a policy a question, build one like a Shortcut, and watch okayed narrow a model's draft into an exact grant. The engine runs in your browser." />
     <link rel="icon" href="./favicon.svg" />
+    <script>
+      if (matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark");
+    </script>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="./src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

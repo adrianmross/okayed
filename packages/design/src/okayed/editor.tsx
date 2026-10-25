@@ -74,7 +74,7 @@ const COUNTS: [string, number | undefined][] = [["No limit", undefined], ["Once"
 const HORIZONS: [string, number | undefined][] = [["No end", undefined], ["For 1 day", 86400], ["For 1 week", 7 * 86400], ["For 2 weeks", 14 * 86400], ["For 30 days", 30 * 86400]];
 
 /** A tappable token that opens a list of choices, like a Shortcuts parameter. */
-function Choice<T>({ value, options, onPick, tone = "plain", label }: { value: T; options: [string, T, ReactNode?][]; onPick: (v: T) => void; tone?: Parameters<typeof Token>[0]["tone"]; label: string }) {
+export function Choice<T>({ value, options, onPick, tone = "plain", label }: { value: T; options: [string, T, ReactNode?][]; onPick: (v: T) => void; tone?: Parameters<typeof Token>[0]["tone"]; label: string }) {
   const [open, setOpen] = useState(false);
   const current = options.find(([, v]) => JSON.stringify(v) === JSON.stringify(value))?.[0] ?? String(value);
   return (
