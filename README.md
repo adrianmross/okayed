@@ -88,14 +88,17 @@ A one-time okay is the narrow case. Most of the time you want an agent to get on
 > “let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges”
 
 That becomes a standing policy: agent `assistant`, repo `adrianmross/okayed`, condition `checks.pass`, a 14-day horizon
-and a budget of 30. Each merge under it is auto-approved as its own once-only grant, pinned to the PR's head commit.
-The grant names the policy that allowed it, and the policy's budget is charged when the grant is issued. When the
-budget runs out, the next merge asks you, the card says what spent it, and one tap tops it up.
+and a limit of 30. Each merge under it is auto-approved as its own once-only grant, pinned to the PR's head commit,
+and the grant names the policy that allowed it.
 
-New users start with a **balanced posture**: reads and comments go ahead, merges go ahead when checks pass (within a
-budget), staging deploys go ahead, and production deploys and spending ask. All of these are ordinary rules you can
-change in the Policy tab, by tapping a pill, or in words. The model's draft of a policy can't widen what you said,
-and a risky policy with no end and no count makes okayed ask “for how long, or how many times?”.
+**Budgets are optional.** Put one on a single policy ("up to 30 merges"), or add a shared budget across policies:
+global ("everything, 100 risk this week"), for one action ("merges, 10 a day") or for one agent ("assistant, 50 risk
+this week, counting my own okays too"). When a budget runs out, the next request asks you, the card says what spent
+it, and one tap tops it up.
+
+New users start with a **balanced posture** and no budgets: reads, comments, merges with passing checks, and staging
+deploys go ahead; production deploys and spending ask. These are ordinary rules you can change in the Policy tab, by
+tapping a pill, or in words. The model's draft of a policy can't widen what you said.
 
 ## Repository layout
 

@@ -54,7 +54,7 @@ Every event's `content` is the [JCS](https://www.rfc-editor.org/rfc/rfc8785) ser
 | `exp` | unix s | Not valid at or after. Must also be the `expiration` tag. |
 | `uses` | int ≥ 1 | How many times it may be used. There is no "unlimited". |
 | `risk` | `low` \| `medium` \| `high` \| `critical` | Computed by the engine, not by the model. |
-| `assurance` | `{method, at, proof?, policy?}` | How the person confirmed: `web-click` today, later `webauthn` or `approver` with `proof`. For `policy` (auto-approved by a standing policy), `policy` lists the ids of the rules that allowed it and were charged for it. |
+| `assurance` | `{method, at, proof?, policy?}` | How the person confirmed: `web-click` today, later `webauthn` or `approver` with `proof`. For `policy` (auto-approved by a standing policy), `policy` lists the rules that allowed it and the shared budgets it drew on (`budget:<id>`). |
 | `from` | `{utterance, request}` | The person's words, and the request id it answers (`null` for a pre-approval). For audit only; never used to decide. |
 | `nonce` | hex(8+) | Makes otherwise identical grants distinct. |
 
@@ -116,7 +116,8 @@ Request    { v: 0, id, aud, act, res: string[], why: string, at, exp }
 Revoke     { v: 0, grant: id, reason: string, at }
 UseReceipt { v: 0, grant: id, use: n, left: n, act, res, at }
 Stop       { v: 0, reason: string, at }
-Policy     { v: 0, layers: [{ name, default: "allow" | "ask" | "deny" | "abstain", rules: Rule[] }], at }
+Policy     { v: 0, layers: [{ name, default: "allow" | "ask" | "deny" | "abstain", rules: Rule[] }], budgets?: SharedBudget[], at }
+SharedBudget { id, uses?, risk?, scope?: { act?, res?, agent? }, counts?: "auto" | "all", until?, note? }
 Rule       { id, effect: "allow" | "ask" | "deny", act, res?, agent?,
              from?, until?,                  // horizon
              budget?: { uses?, risk? },      // totals across auto-approvals
