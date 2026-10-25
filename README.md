@@ -108,9 +108,11 @@ packages/grant       grant format v0: JCS, ids, Nostr events, BIP-340 signatures
 packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock),
                      the lifecycle flow, prompts, a model-free drafter, in-memory adapters, the GitHub tool
 apps/worker          Cloudflare: Agents SDK agent (Durable Object per user), Workflow, Workers AI drafter, HTTP API
+packages/client      a dependency-free client for agents: ask, wait, merge
 packages/ui          shared DOM components and styles for both UIs (flat blocks)
 apps/web             Pages: Now (requests + chat), Grants, Policy, Activity, Setup; Debug switch for raw detail
 apps/playground      Pages: the engine in the browser; policy what-ifs and the narrowing demo
+apps/mcp             MCP server so Assistant or any MCP agent asks okayed before acting
 docs/                design notes and the grant format
 scripts/smoke.mjs    end-to-end check against a running Worker
 ```
@@ -161,6 +163,37 @@ Or let okayed perform the action: `POST /api/u/:user/tools/github/merge {grant, 
 Worker verifies and consumes the grant, checks `checks.pass` when the grant requires it (without spending the use if
 the checks fail), then merges with its own `GITHUB_TOKEN`, passing GitHub's `sha` guard so a moved head is refused.
 The agent never holds the token.
+
+### Use it from Assistant, or any MCP agent
+
+`apps/mcp` is an MCP server with four tools:
+
+- `okayed_actions` lists the actions and how to name exact targets.
+- `okayed_request` asks before acting. It returns at once if a standing policy allows the action; otherwise it waits for you.
+- `okayed_status` keeps waiting on a request.
+- `okayed_merge_pr` merges through okayed's tool.
+
+Grants stay inside the MCP process, so the agent sees what it may do but never holds a credential.
+
+```json
+{
+  "mcpServers": {
+    "okayed": {
+      "command": "node",
+      "args": ["/path/to/okayed/apps/mcp/src/main.ts"],
+      "env": { "OKAYED_API": "https://okayed.<you>.workers.dev", "OKAYED_USER": "<user id>", "OKAYED_TOKEN": "agt_…" }
+    }
+  }
+}
+```
+
+For code that isn't an MCP agent, `packages/client` does the same in a few lines:
+
+```ts
+const okayed = new OkayedClient({ api, user, token });
+const a = await okayed.ask("github.pr.merge", [prResource("adrianmross", "okayed", 182, sha)], "CI is green");
+if (a.status === "granted") await okayed.merge(a.event!, { owner: "adrianmross", repo: "okayed", number: 182, sha });
+```
 
 ## Deploy (Cloudflare)
 
