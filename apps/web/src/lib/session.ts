@@ -1,5 +1,3 @@
-import { store } from "@okayed/ui";
-
 export interface Session {
   api: string;
   userId: string;
@@ -10,7 +8,7 @@ const KEY = "okayed.session.v0";
 
 export function loadSession(): Session | null {
   try {
-    const s = JSON.parse(store.get(KEY) ?? "null") as Session | null;
+    const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as Session | null;
     return s?.userId && s.ownerToken ? s : null;
   } catch {
     return null;
@@ -18,12 +16,25 @@ export function loadSession(): Session | null {
 }
 
 export function saveSession(s: Session | null): void {
-  store.set(KEY, s ? JSON.stringify(s) : null);
+  try {
+    if (s) localStorage.setItem(KEY, JSON.stringify(s));
+    else localStorage.removeItem(KEY);
+  } catch {
+    // storage blocked: the session lasts as long as the tab
+  }
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
 }
 
 async function parse<T>(r: Response): Promise<T> {
   const json = (await r.json().catch(() => ({}))) as T & { error?: string };
-  if (!r.ok) throw new Error(json.error ?? `HTTP ${r.status}`);
+  if (!r.ok) throw new ApiError(r.status, json.error ?? `HTTP ${r.status}`);
   return json;
 }
 

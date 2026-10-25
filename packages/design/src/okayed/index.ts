@@ -3,3 +3,4 @@ export * from "./primitives";
 export * from "./approval";
 export * from "./receipt";
 export * from "./policy";
+export * from "./editor";
