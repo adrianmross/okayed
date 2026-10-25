@@ -11,6 +11,7 @@ export * from "./use.ts";
 export {
   allowsFor,
   describeRequestSentence,
+  describeBudget,
   describeRule,
   patternLabel,
   ruleParts,

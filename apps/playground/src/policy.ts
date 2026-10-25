@@ -1,8 +1,9 @@
-import { CATALOG, DEFAULT_POSTURE, decideAll, lint, narrowPolicy, personalLayer, policyClauses, type Beyond, type Layer, type Policy, type Rule, type Usage } from "@okayed/engine";
-import { cutBlocks, h, questionLine, ruleBlock, verdictView, VERDICT_WORD, type Question } from "@okayed/ui";
+import { CATALOG, DEFAULT_POSTURE, decideAll, lint, narrowPolicy, personalLayer, policyClauses, type Beyond, type Layer, type Policy, type Rule, type SharedBudget, type Usage } from "@okayed/engine";
+import { budgetBlock, budgetPresets, cutBlocks, h, questionLine, ruleBlock, verdictView, VERDICT_WORD, type Question } from "@okayed/ui";
 import { NOW, PR, QUESTION_TARGETS, TARGETS } from "./data.ts";
 
 let layer: Layer = personalLayer();
+let budgets: SharedBudget[] = [];
 let usage: Usage = {};
 let history: Layer[] = [];
 let question: Question = { agent: "agent:assistant", act: "github.pr.merge", res: PR, later: 0 };
@@ -10,7 +11,7 @@ let sentence = "let assistant merge anything in okayed when checks pass for 2 we
 let lastCut: Beyond[] = [];
 let lastQuestion: { text: string; options: string[] } | null = null;
 
-const policy = (l = layer): Policy => ({ layers: [l] });
+const policy = (l = layer): Policy => ({ layers: [l], ...(budgets.length ? { budgets } : {}) });
 const id = () => `w${Math.random().toString(36).slice(2, 8)}`;
 
 const EXAMPLES: [string, Partial<Question>][] = [
@@ -66,8 +67,8 @@ function useIt(rerender: () => void): void {
   if (d.verdict !== "allow") return;
   usage = { ...usage };
   for (const c of d.charges) {
-    const u = usage[c.rule] ?? { uses: 0, risk: 0 };
-    usage[c.rule] = { uses: u.uses + 1, risk: u.risk + c.cost };
+    const u = usage[c.key] ?? { uses: 0, risk: 0 };
+    usage[c.key] = { uses: u.uses + 1, risk: u.risk + c.cost };
   }
   rerender();
 }
@@ -136,6 +137,28 @@ export function policySection(rerender: () => void): HTMLElement {
             ),
           )
         : h("div", { class: "note" }, "No policies: everything asks you."),
+    ),
+    h(
+      "section",
+      { class: "card" },
+      h("div", { class: "card-head" }, h("strong", { style: "color:var(--ink)" }, "Shared budgets"), h("span", null, "optional; span every policy in their scope")),
+      budgets.length
+        ? h(
+            "div",
+            { class: "blocks" },
+            budgets.map((b, i) =>
+              budgetBlock(b, now, usage, {
+                remove: () => ((budgets = budgets.filter((_, j) => j !== i)), rerender()),
+                topUp: () => {
+                  usage = { ...usage };
+                  delete usage[`budget:${b.id}`];
+                  rerender();
+                },
+              }),
+            ),
+          )
+        : h("div", { class: "note" }, "None. Add one to cap auto-approvals across policies: for everything, one action, or one agent."),
+      h("div", { class: "chips" }, budgetPresets(NOW).map(([label, b]) => h("button", { class: "chip", type: "button", onclick: () => ((budgets = [...budgets, { ...b, id: `${b.id}-${budgets.length}` }]), rerender()) }, `+ ${label}`))),
     ),
     lint(policy(), now).map((w) => h("div", { class: "note" }, `${w.layer}: ${w.message}`)),
     history.length ? h("div", null, h("button", { class: "btn quiet", type: "button", onclick: () => ((layer = history.pop()!), rerender()) }, "Undo")) : null,

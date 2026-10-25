@@ -67,6 +67,12 @@ const s3 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.mer
 const g3 = await call("GET", `${u}/requests/${s3.request.id}?wait=15`, agentToken);
 check(g3.status === "granted", "after a top-up it goes ahead again");
 
+// A shared budget spans policies: a merges-only pool of zero stops even this policy until topped up.
+await call("PUT", `${u}/budgets`, ownerToken, { budgets: [{ id: "merges", scope: { act: "github.pr.merge" }, uses: 0 }] });
+const s4 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.merge", res: [pr(203)] });
+check(s4.status === "pending", "a spent shared budget asks, across policies");
+await call("PUT", `${u}/budgets`, ownerToken, { budgets: [] });
+
 // The live-state socket must give nothing to a caller without the owner token.
 async function socketTypes(token) {
   const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/agents/okayed-agent/${userId}${token ? `?token=${token}` : ""}`);

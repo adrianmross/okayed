@@ -1,4 +1,4 @@
-import { CATALOG, humanDuration, labelRes, parseRes, ruleParts, type Beyond, type Decision, type GrantDraft, type Rule, type Usage } from "@okayed/engine";
+import { CATALOG, describeBudget, humanDuration, labelRes, parseRes, ruleParts, type Beyond, type Decision, type GrantDraft, type Rule, type SharedBudget, type Usage } from "@okayed/engine";
 import { h } from "./dom.ts";
 
 /** Kinds of fact a block can hold; each has its own tile tone in style.css. */
@@ -147,6 +147,28 @@ function budgetLeftOf(rule: Rule, usage?: Usage): Record<string, number> {
   return out;
 }
 
+/** One-tap shared budgets, from global to one action or agent. */
+export function budgetPresets(now: number): [string, SharedBudget][] {
+  const week = now + 7 * 86400;
+  const day = now + 86400;
+  return [
+    ["Everything: 100 risk this week", { id: `week-${now.toString(36)}`, risk: 100, until: week, note: "everything, this week" }],
+    ["Merges: 10 a day", { id: `merges-${now.toString(36)}`, scope: { act: "github.pr.merge" }, uses: 10, until: day, note: "merges today" }],
+    ["assistant: 50 risk this week, counting my okays", { id: `assistant-${now.toString(36)}`, scope: { agent: "agent:assistant" }, risk: 50, counts: "all", until: week, note: "assistant this week" }],
+  ];
+}
+
+/** A shared budget as one block: its scope, what's left, how long it lasts, what it counts. */
+export function budgetBlock(b: SharedBudget, now: number, usage?: Usage, act: { remove?: () => void; topUp?: () => void } = {}): HTMLElement {
+  const d = describeBudget(b, now, usage);
+  const spent = usage?.[`budget:${b.id}`] ?? { uses: 0, risk: 0 };
+  const dry = (b.uses !== undefined && spent.uses >= b.uses) || (b.risk !== undefined && spent.risk >= b.risk);
+  const el = block(dry ? "cut" : "time", "Budget for ", pill(d.scope), " · ", pill(d.left, dry ? "gone" : ""), ...(d.horizon ? [" ", pill(d.horizon)] : []), h("div", { class: "why" }, `${b.note ? `${b.note} · ` : ""}${d.counts}`));
+  if (act.topUp && (spent.uses || spent.risk)) el.append(h("button", { class: "btn", type: "button", onclick: act.topUp }, "Top up"));
+  if (act.remove) el.append(h("button", { class: "x", type: "button", "aria-label": "Remove budget", onclick: act.remove }, "×"));
+  return el;
+}
+
 export const VERDICT_WORD: Record<Decision["verdict"], string> = { allow: "Yes", ask: "Asks you first", deny: "No" };
 
 export function layersTable(d: Pick<Decision, "layers"> | { layers: { layer: string; verdict: string; why: string }[] }): HTMLElement {
@@ -160,16 +182,18 @@ export function layersTable(d: Pick<Decision, "layers"> | { layers: { layer: str
 /** The one-word answer, its reason, and on a yes what it draws from which budget. Layers are Debug-only. */
 export function verdictView(d: Decision): HTMLElement {
   const draws = d.verdict === "allow" ? d.layers.filter((l) => l.rule?.budget) : [];
+  const pools = d.verdict === "allow" ? d.charges.filter((c) => c.key.startsWith("budget:")) : [];
   return h(
     "div",
     null,
     h("div", { class: `verdict-word ${d.verdict}` }, VERDICT_WORD[d.verdict]),
     h("div", null, d.reason),
     draws.map((l) => {
-      const cost = d.charges.find((c) => c.rule === l.rule!.id)?.cost ?? 0;
+      const cost = d.charges.find((c) => c.key === l.rule!.id)?.cost ?? 0;
       const left = l.left?.risk !== undefined ? `${l.left.risk - cost} risk left after this` : l.left?.uses !== undefined ? `${l.left.uses - 1} left after this` : "";
       return h("div", { class: "note" }, `Draws on “${l.rule!.note ?? l.rule!.id}”${left ? `: ${left}` : ""}.`);
     }),
+    pools.length ? h("div", { class: "note" }, `Also draws on shared budget${pools.length > 1 ? "s" : ""}: ${pools.map((c) => c.key.slice(7)).join(", ")}.`) : null,
     d.when.length ? h("div", { class: "note" }, `The grant will require: ${d.when.map((w) => (w.c === "checks.pass" ? "checks pass" : w.c)).join(", ")}.`) : null,
     h("div", { class: "debug-only" }, layersTable(d)),
   );

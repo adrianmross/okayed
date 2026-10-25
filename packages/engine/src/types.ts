@@ -44,7 +44,7 @@ export interface Budget {
   risk?: number;
 }
 
-/** What each rule has spent so far, by rule id. Kept by the caller; the engine only reads it. */
+/** What each rule (by id) and shared budget (by `budget:<id>`) has spent. Kept by the caller; the engine only reads it. */
 export type Usage = Record<string, { uses: number; risk: number }>;
 
 export interface Layer {
@@ -56,6 +56,21 @@ export interface Layer {
 
 export interface Policy {
   layers: Layer[];
+  /** Shared budgets: pools that span every policy matching their scope. None by default. */
+  budgets?: SharedBudget[];
+}
+
+/**
+ * A budget shared across policies. With no scope it is global; with `act: "github.pr.merge"` it covers every merge;
+ * with an agent, everything that agent does. Draws count auto-approvals, or with `counts: "all"` your own okays too.
+ */
+export interface SharedBudget extends Budget {
+  id: string;
+  scope?: { act?: string; res?: string; agent?: string };
+  counts?: "auto" | "all";
+  /** The pool stops applying at this time; a fresh one can replace it. */
+  until?: Unix;
+  note?: string;
 }
 
 /** What an agent asked for. */
