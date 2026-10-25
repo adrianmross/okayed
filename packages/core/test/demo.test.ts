@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
-import { openGrantEvent } from "@okayed/grant";
 import {
   DEMO_AGENT,
   DEMO_SYSTEM,
