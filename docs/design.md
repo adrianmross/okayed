@@ -64,21 +64,26 @@ Each layer holds rules:
   layer asks.
 - Across layers, the **strictest verdict wins**, so a layer can only narrow the one above it. The reason names the
   first layer that refused or asked. Per-grant caps are the minimum across layers.
-- **Budgets.** Each action has a risk cost (low 1, medium 3, high 8, critical 20; a production deploy counts as
-  high). An `allow` whose budget can't cover the next use asks instead. The card says what spent the budget, and a
-  top-up resets it in one decision. Counters live in the person's Durable Object and are charged in the same
-  transaction that issues the grant.
+- **Budgets are opt-in.** Every use is counted against the rule that allowed it, so each policy shows how often it
+  has been used. A budget makes that count a limit. Budgets come in two kinds:
+  - **On one policy** (`budget` on a rule): "this merge policy, 30 times".
+  - **Shared** (`budgets` on the policy): a pool across every policy in its scope. With no scope it's global
+    ("everything, 100 risk this week"); a scope narrows it to one action, one agent or a set of resources
+    ("merges, 10 a day"). A pool counts auto-approvals, or with `counts: "all"` your own okays too.
+
+  Each action has a risk cost (low 1, medium 3, high 8, critical 20; a production deploy counts as high). A use
+  that a budget can't cover asks instead of auto-approving. The card says what spent the budget, and a top-up resets
+  it in one decision. Counters live in the person's Durable Object and are charged in the same transaction that
+  issues the grant.
 - **Default posture ("balanced").** New users start with ordinary rules in their own layer, which they can edit or
-  delete:
-  - reads go ahead
-  - comments go ahead, up to 20
-  - merges go ahead when checks pass, within a 40-risk budget (five merges)
-  - staging and preview deploys go ahead, within a budget
+  delete, and no budgets:
+  - reads and comments go ahead
+  - merges go ahead when checks pass
+  - staging and preview deploys go ahead
   - production deploys and spending ask
 - **From words.** "let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges" becomes a
   standing policy with an agent, a repo scope, a condition, a horizon and a count. The model's draft can't widen any
-  of these. A risky standing allow with no end and no count becomes a question ("for how long, or how many
-  times?"), not a refusal. "Forever" is the person's call, and the linter says so.
+  of these. How open-ended a policy is stays the person's call.
 
 ## Components
 
