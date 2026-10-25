@@ -2,13 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>okayed</title>
-    <meta name="description" content="Turn your plain-language okays into exact, signed, expiring grants for your AI agents." />
+    <meta name="description" content="Your okay, made exact: approve what your AI agents do with Face ID, and set standing policies for the rest." />
     <link rel="icon" href="./favicon.svg" />
+    <script>
+      // Set the theme before first paint so there's no flash.
+      if (matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.classList.add("dark");
+    </script>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="./src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

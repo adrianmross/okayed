@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { cn } from "../lib/utils";
-import { ActionTile, AgentAvatar } from "./primitives";
+import { ActionTile, AgentAvatar, Seal } from "./primitives";
 
 export type ReceiptStatus = "active" | "used" | "expired" | "revoked";
 
@@ -20,6 +20,8 @@ export interface ReceiptCardProps {
   uses: number;
   status: ReceiptStatus;
   simulated?: boolean;
+  /** Press the okayed seal on it: the person approved this one themselves. */
+  sealed?: boolean;
   compact?: boolean;
   onShowEvent?: () => void;
   onRevoke?: () => void;
@@ -55,7 +57,10 @@ export function ReceiptCard(p: ReceiptCardProps) {
               <span className="tabular">{when(p.at)}</span>
             </div>
           </div>
-          <Badge variant="secondary" className={cn("rounded-full", STATUS[p.status].cls)}>{STATUS[p.status].label}</Badge>
+          <span className="flex flex-col items-end gap-2">
+            <Badge variant="secondary" className={cn("rounded-full", STATUS[p.status].cls)}>{STATUS[p.status].label}</Badge>
+            {p.sealed && <Seal className="size-10 [&_svg]:size-8" label="Okayed by you" />}
+          </span>
         </div>
       </div>
       <div className="flex items-center gap-3 px-4 py-2.5 text-xs">

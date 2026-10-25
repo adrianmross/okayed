@@ -28,6 +28,7 @@ export const POLICY_ACTION: ActionMeta = { act: "policy", title: "Change a polic
 
 export function actionMeta(act: string): ActionMeta {
   if (ACTIONS[act]) return ACTIONS[act];
+  if (act === "policy") return POLICY_ACTION;
   const family = Object.values(ACTIONS).find((a) => act.endsWith("*") && a.act.startsWith(act.replace(/\.?\*$/, "")));
   return family ? { ...family, title: `Anything in ${act.replace(/\.?\*$/, "")}`, noun: `anything in ${act.replace(/\.?\*$/, "")}` } : ANY_ACTION;
 }
