@@ -37,6 +37,7 @@ import {
 } from "@okayed/grant";
 import { chatCard, draftOf, grantCard } from "./cards.ts";
 import type { FlowTarget } from "./flow.ts";
+import { approvalOptions, bindingFor, registrationOptions, verifyApproval, verifyRegistration, type ApprovalBinding, type RelyingParty, type StoredPasskey } from "./passkeys.ts";
 import type { Clock, DraftContext, Drafter, Lifecycle, Randomness, Signer, Store } from "./ports.ts";
 import {
   OkayedError,
@@ -172,7 +173,17 @@ export class OkayedService implements FlowTarget {
 
   // ---------- requests from agents ----------
 
-  async submitRequest(agentId: string, input: { act?: unknown; res?: unknown; why?: unknown; ttl?: unknown }): Promise<{ request: Request; status: RequestStatus | "approving"; cardId?: string; reason?: string }> {
+  async submitRequest(agentId: string, input: { act?: unknown; res?: unknown; why?: unknown; ttl?: unknown; ref?: unknown }): Promise<{ request: Request; status: RequestStatus | "approving"; cardId?: string; reason?: string }> {
+    // A caller's own id for this request (a tool call id): asking twice returns the first request, not a second one.
+    const ref = typeof input.ref === "string" && input.ref ? input.ref.slice(0, 128) : undefined;
+    if (ref) {
+      const existing = await this.byRef(agentId, ref);
+      if (existing) {
+        const card = existing.cardId ? await this.d.store.get<Card>(`card:${existing.cardId}`) : undefined;
+        const status = existing.status === "pending" && card?.status === "confirming" ? "approving" : existing.status;
+        return { request: existing.request, status, ...(existing.cardId ? { cardId: existing.cardId } : {}), ...(existing.reason ? { reason: existing.reason } : {}) };
+      }
+    }
     const act = typeof input.act === "string" ? input.act : "";
     if (!CATALOG[act]) throw new OkayedError(400, `unknown action "${act}"; known: ${Object.keys(CATALOG).join(", ")}`);
     const rawRes = Array.isArray(input.res) ? input.res : typeof input.res === "string" ? [input.res] : [];
@@ -203,7 +214,8 @@ export class OkayedService implements FlowTarget {
       const targets = await this.targets(tx);
       const usage = await this.usage(tx);
       const result = narrowGrant({ utterance: "", proposal: request, requests: [request], targets, policy, now, select: request.id, usage });
-      const rec: RequestRecord = { request, status: "pending" };
+      const rec: RequestRecord = { request, status: "pending", ...(ref ? { ref } : {}) };
+      if (ref) await tx.put(`ref:${agentId}:${ref}`, request.id);
       await this.audit(tx, { type: "request", text: describeRequestSentence(request), ref: request.id, event });
       if (result.kind !== "grant") {
         rec.status = "denied";
@@ -234,6 +246,89 @@ export class OkayedService implements FlowTarget {
     if (out.card) reply.cardId = out.card.id;
     if (out.rec.reason) reply.reason = out.rec.reason;
     return reply;
+  }
+
+  /** A request by the caller's own ref, as `submitRequest` recorded it. */
+  async requestByRef(agentId: string, ref: string): Promise<{ status: RequestStatus; reason?: string; grant?: NostrEvent; cardId?: string } | null> {
+    const id = await this.d.store.get<string>(`ref:${agentId}:${ref}`);
+    if (!id) return null;
+    const st = await this.requestStatus(agentId, id);
+    const rec = await this.d.store.get<RequestRecord>(`req:${id}`);
+    return st ? { ...st, ...(rec?.cardId ? { cardId: rec.cardId } : {}) } : null;
+  }
+
+  private async byRef(agentId: string, ref: string): Promise<RequestRecord | null> {
+    const id = await this.d.store.get<string>(`ref:${agentId}:${ref}`);
+    return id ? ((await this.d.store.get<RequestRecord>(`req:${id}`)) ?? null) : null;
+  }
+
+  // ---------- passkeys ----------
+
+  private async passkeys(tx: Pick<Store, "get"> = this.d.store): Promise<StoredPasskey[]> {
+    return (await tx.get<StoredPasskey[]>("passkeys")) ?? [];
+  }
+
+  /** Options for the browser to create a passkey (Face ID, Touch ID…) for approving. */
+  async passkeyOptions(rp: RelyingParty) {
+    const options = await registrationOptions(rp, this.d.userId, await this.passkeys());
+    await this.d.store.put("pk:register", { challenge: options.challenge, exp: this.d.clock.now() + 300 });
+    return options;
+  }
+
+  async addPasskey(rp: RelyingParty, response: unknown, name = "Face ID"): Promise<{ id: string; name: string }> {
+    const pending = await this.d.store.get<{ challenge: string; exp: number }>("pk:register");
+    if (!pending || pending.exp <= this.d.clock.now()) throw new OkayedError(409, "the setup took too long; try again");
+    let passkey: StoredPasskey;
+    try {
+      passkey = await verifyRegistration(rp, response, pending.challenge, name.slice(0, 40), this.d.clock.now());
+    } catch (e) {
+      throw new OkayedError(400, (e as Error).message);
+    }
+    await this.d.store.transaction(async (tx) => {
+      await tx.delete("pk:register");
+      await tx.put("passkeys", [...(await this.passkeys(tx)).filter((p) => p.id !== passkey.id), passkey]);
+      await this.audit(tx, { type: "passkey", text: `Set up ${passkey.name} for approvals.` });
+    });
+    return { id: passkey.id, name: passkey.name };
+  }
+
+  async removePasskey(id: string): Promise<void> {
+    await this.d.store.transaction(async (tx) => {
+      await tx.put("passkeys", (await this.passkeys(tx)).filter((p) => p.id !== id));
+      await this.audit(tx, { type: "passkey", text: "Removed a passkey." });
+    });
+  }
+
+  /** Options for approving one card with a passkey: the challenge is a hash of exactly what is being approved. */
+  async approvalChallenge(cardId: string, rp: RelyingParty) {
+    const card = await this.d.store.get<Card>(`card:${cardId}`);
+    if (!card || card.status !== "open") throw new OkayedError(409, "this isn't waiting for an okay");
+    const keys = (await this.passkeys()).filter((p) => p.rpID === rp.rpID);
+    if (!keys.length) throw new OkayedError(412, "set up Face ID first");
+    const binding = bindingFor(cardId, card.draft ?? card.rules ?? card.sentence, this.d.random.hex(8));
+    await this.d.store.put(`pk:card:${cardId}`, { binding, exp: this.d.clock.now() + 300 });
+    return approvalOptions(rp, binding, keys);
+  }
+
+  /** Confirms a card with a verified passkey assertion; the proof rides on the grant. */
+  async confirmWithPasskey(cardId: string, rp: RelyingParty, response: unknown): Promise<Card> {
+    const pending = await this.d.store.get<{ binding: ApprovalBinding; exp: number }>(`pk:card:${cardId}`);
+    if (!pending || pending.exp <= this.d.clock.now()) throw new OkayedError(409, "the approval took too long; try again");
+    const card = await this.d.store.get<Card>(`card:${cardId}`);
+    if (!card || bindingFor(cardId, card.draft ?? card.rules ?? card.sentence, pending.binding.nonce).draft !== pending.binding.draft) {
+      throw new OkayedError(409, "the request changed after you were asked");
+    }
+    let verified: Awaited<ReturnType<typeof verifyApproval>>;
+    try {
+      verified = await verifyApproval(rp, response, pending.binding, await this.passkeys());
+    } catch (e) {
+      throw new OkayedError(401, (e as Error).message);
+    }
+    await this.d.store.transaction(async (tx) => {
+      await tx.delete(`pk:card:${cardId}`);
+      await tx.put("passkeys", (await this.passkeys(tx)).map((p) => (p.id === verified.passkey.id ? { ...p, counter: verified.counter } : p)));
+    });
+    return this.confirm(cardId, "webauthn", verified.proof);
   }
 
   async requestStatus(agentId: string, id: string): Promise<{ status: RequestStatus; reason?: string; grant?: NostrEvent } | null> {
@@ -580,7 +675,8 @@ export class OkayedService implements FlowTarget {
   async snapshot(): Promise<Snapshot> {
     const s = this.d.store;
     const who = { userId: this.d.userId, issuer: this.d.signer.pubkey, drafter: this.d.drafter.name };
-    return buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), await this.usage(s), this.d.clock.now());
+    const snap = await buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), await this.usage(s), this.d.clock.now());
+    return { ...snap, passkeys: (await this.passkeys(s)).map(({ id, name, rpID, createdAt }) => ({ id, name, rpID, createdAt })) };
   }
 
   async events(): Promise<NostrEvent[]> {

@@ -1,5 +1,7 @@
 import { Agent, type Connection, type ConnectionContext } from "agents";
 import {
+  DEMO_AGENT,
+  DEMO_TARGETS,
   FallbackDrafter,
   HeuristicDrafter,
   KeySigner,
@@ -14,17 +16,18 @@ import {
   type FlowParams,
   type Lifecycle,
   type MergeInput,
+  type RelyingParty,
   type Snapshot,
 } from "@okayed/core";
 import { parseRes } from "@okayed/engine";
-import { KIND, sha256Hex, type Assurance } from "@okayed/grant";
+import { KIND, sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
 import type { Env } from "./env.ts";
 
 export type ApiReply = { status: number; body: unknown };
 
 /** Methods the HTTP router may call, by who is calling. */
-const OWNER = ["snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events"] as const;
+const OWNER = ["passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events"] as const;
 const AGENT = ["submitRequest", "requestStatus", "merge"] as const;
 const PUBLIC = ["verify", "issuer"] as const;
 export type OwnerMethod = (typeof OWNER)[number];
@@ -133,6 +136,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     return this.reply(async () => {
       const token = await this.svc.claim();
       if (!token) throw new OkayedError(409, "user exists");
+      if (this.env.DEMO !== "0") await this.svc.setTargets({ repos: DEMO_TARGETS.repos, sites: DEMO_TARGETS.sites });
       this.ownerHash = sha256Hex(token);
       return { userId: this.name, ownerToken: token, issuer: this.svc.issuer };
     }, 201);
@@ -153,6 +157,16 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     switch (method) {
       case "snapshot":
         return this.reply(() => s.snapshot());
+      case "passkeyOptions":
+        return this.reply(async () => s.passkeyOptions(this.rp(a[0])));
+      case "addPasskey":
+        return this.reply(async () => s.addPasskey(this.rp(a[0]), a[1], typeof a[2] === "string" ? a[2] : undefined), 201);
+      case "removePasskey":
+        return this.reply(() => s.removePasskey(String(a[0])));
+      case "approvalChallenge":
+        return this.reply(async () => s.approvalChallenge(String(a[0]), this.rp(a[1])));
+      case "confirmWithPasskey":
+        return this.reply(async () => s.confirmWithPasskey(String(a[0]), this.rp(a[1]), a[2]));
       case "chat":
         return this.reply(() => s.chat(String(a[0] ?? "")));
       case "confirm":
@@ -245,6 +259,38 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       if (head.toLowerCase() !== x.sha) throw new OkayedError(409, `PR #${x.number} is at ${head.slice(0, 7)}, not ${x.sha.slice(0, 7)}`);
       await this.svc.notePr(`${x.owner}/${x.repo}`, x.number, head);
     }
+  }
+
+  /** The relying party for a passkey ceremony: only origins this deployment serves its web app from. */
+  private rp(origin: unknown): RelyingParty {
+    const allowed = (this.env.WEB_ORIGINS ?? "http://localhost:5173,http://localhost:5174").split(",").map((o) => o.trim()).filter(Boolean);
+    if (typeof origin !== "string" || !allowed.includes(origin)) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);
+    return { origin, rpID: new URL(origin).hostname, rpName: "okayed" };
+  }
+
+  // ---------- RPC from the demo chat (Assistant's tools) ----------
+
+  async demoRequest(input: { act: string; res: string[]; why: string; ref: string }) {
+    const out = await this.svc.submitRequest(DEMO_AGENT, input);
+    await this.broadcastSnapshot();
+    return { status: out.status, ...(out.reason ? { reason: out.reason } : {}), ...(out.cardId ? { cardId: out.cardId } : {}) };
+  }
+
+  async demoByRef(ref: string) {
+    return this.svc.requestByRef(DEMO_AGENT, ref);
+  }
+
+  /** Spends the grant for a simulated action. The demo's checks are always green. */
+  async demoUse(event: NostrEvent, act: string, res: string) {
+    const r = await this.svc.verify({ event, aud: DEMO_AGENT, act, res, consume: true, facts: { "checks.pass": true } });
+    await this.broadcastSnapshot();
+    return r.ok ? { ok: true as const, left: r.left, ...(r.receipt ? { receipt: r.receipt } : {}) } : { ok: false as const, reason: r.reason };
+  }
+
+  async demoPropose(sentence: string) {
+    const card = await this.svc.chat(sentence);
+    await this.broadcastSnapshot();
+    return { cardId: card.id, kind: card.kind, sentence: card.sentence };
   }
 
   // ---------- RPC from the Workflow (FlowTarget) ----------

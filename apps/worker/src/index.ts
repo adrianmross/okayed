@@ -4,6 +4,7 @@ import type { Env } from "./env.ts";
 
 export { OkayedAgent } from "./agent.ts";
 export { GrantLifecycle } from "./workflow.ts";
+export { OkayedChat } from "./chat.ts";
 
 /**
  * HTTP API. The person's browser uses an owner token; agents use agent tokens minted by the person; anyone may
@@ -54,7 +55,11 @@ const INFO = {
     "POST /api/users": "create a user; returns userId and ownerToken",
     "GET /api/u/:user/state": "owner: policy, cards, requests, grants, audit",
     "POST /api/u/:user/chat": "owner: { text }",
-    "POST /api/u/:user/cards/:card/confirm|deny": "owner",
+    "POST /api/u/:user/cards/:card/challenge": "owner: { origin } → passkey options bound to this exact request",
+    "POST /api/u/:user/cards/:card/confirm": "owner: { origin, assertion } approves with a passkey; without one, a plain okay",
+    "POST /api/u/:user/cards/:card/deny": "owner",
+    "POST /api/u/:user/passkeys/options | /passkeys": "owner: set up Face ID / Touch ID for approving",
+    "WS /agents/okayed-chat/:user?token=": "owner: the demo chat with Assistant (Agents SDK AIChatAgent)",
     "POST /api/u/:user/grants/:grant/revoke": "owner: { reason? }",
     "POST /api/u/:user/stop | /resume": "owner: emergency stop / resume auto-approval",
     "POST /api/u/:user/agents": "owner: { name } → agent token (shown once)",
@@ -76,18 +81,17 @@ export default {
     const url = new URL(req.url);
 
     if (url.pathname.startsWith("/agents/")) {
-      // Only the person's own browser may open the live-state socket: check the owner token before upgrading.
-      const res = await routeAgentRequest(req, env, {
-        cors: true,
-        onBeforeConnect: async (r) => {
-          const name = /^\/agents\/okayed-agent\/([0-9a-f]{32})$/.exec(new URL(r.url).pathname)?.[1];
-          if (!name) return json({ error: "not found" }, 404);
-          const stub = await getAgentByName(env.OkayedAgent, name);
-          if (!(await stub.isOwner(new URL(r.url).searchParams.get("token")))) return json({ error: "unauthorized" }, 401);
-          return undefined;
-        },
-        onBeforeRequest: () => json({ error: "not found" }, 404),
-      });
+      // Only the person's own browser may reach their live state or their chat: check the owner token first.
+      const ownerOnly = async (r: Request) => {
+        const m = /^\/agents\/(okayed-agent|okayed-chat)\/([0-9a-f]{32})(?:\/.*)?$/.exec(new URL(r.url).pathname);
+        if (!m) return json({ error: "not found" }, 404);
+        const stub = await getAgentByName(env.OkayedAgent, m[2]!);
+        if (!(await stub.isOwner(new URL(r.url).searchParams.get("token")))) return json({ error: "unauthorized" }, 401);
+        // The okayed agent has no HTTP surface; the chat agent serves its message history.
+        if (r.headers.get("upgrade")?.toLowerCase() !== "websocket" && m[1] === "okayed-agent") return json({ error: "not found" }, 404);
+        return undefined;
+      };
+      const res = await routeAgentRequest(req, env, { cors: true, onBeforeConnect: ownerOnly, onBeforeRequest: ownerOnly });
       return res ?? json({ error: "not found" }, 404);
     }
     if (url.pathname === "/" || url.pathname === "/api") return json(INFO);
@@ -133,8 +137,13 @@ export default {
     if (route === "PUT /targets") return call("setTargets", [b]);
     if (route === "PUT /policy") return call("setRules", [b.rules]);
     if (route === "PUT /budgets") return call("setBudgets", [b.budgets]);
+    if (route === "POST /passkeys/options") return call("passkeyOptions", [b.origin]);
+    if (route === "POST /passkeys") return call("addPasskey", [b.origin, b.response, b.name]);
     let x: RegExpExecArray | null;
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/(confirm|deny)$/.exec(route))) return call(x[2] === "confirm" ? "confirm" : "deny", [x[1]]);
+    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/challenge$/.exec(route))) return call("approvalChallenge", [x[1], b.origin]);
+    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/confirm$/.exec(route))) return b.assertion ? call("confirmWithPasskey", [x[1], b.origin, b.assertion]) : call("confirm", [x[1]]);
+    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/deny$/.exec(route))) return call("deny", [x[1]]);
+    if ((x = /^DELETE \/passkeys\/([A-Za-z0-9_-]+)$/.exec(route))) return call("removePasskey", [x[1]]);
     if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(route))) return call("revoke", [x[1], b.reason]);
     if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decodeURIComponent(route)))) return call("removeAgent", [x[1]]);
     if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decodeURIComponent(route)))) return call("topUp", [x[1]]);

@@ -33,6 +33,8 @@ export type RequestStatus = "pending" | "granted" | "denied" | "expired";
 
 export interface RequestRecord {
   request: Request;
+  /** The caller's own id for the request (e.g. a tool call id). */
+  ref?: string;
   status: RequestStatus;
   cardId?: string;
   grantId?: string;
@@ -136,5 +138,6 @@ export interface Snapshot {
   targets: Targets;
   /** What each standing policy has spent, by rule id. */
   usage: Usage;
+  passkeys: { id: string; name: string; rpID: string; createdAt: number }[];
 }
 

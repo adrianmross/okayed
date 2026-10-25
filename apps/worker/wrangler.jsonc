@@ -8,9 +8,15 @@
   "ai": { "binding": "AI" },
   // One Durable Object per person (SQLite-backed, available on the free plan).
   "durable_objects": {
-    "bindings": [{ "name": "OkayedAgent", "class_name": "OkayedAgent" }]
+    "bindings": [
+      { "name": "OkayedAgent", "class_name": "OkayedAgent" },
+      { "name": "OkayedChat", "class_name": "OkayedChat" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OkayedAgent"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["OkayedAgent"] },
+    { "tag": "v2", "new_sqlite_classes": ["OkayedChat"] }
+  ],
   // The grant lifecycle: propose → await confirm → issue → await revoke or expiry.
   "workflows": [
     { "name": "okayed-grant-lifecycle", "binding": "GRANT_LIFECYCLE", "class_name": "GrantLifecycle" }
@@ -18,7 +24,9 @@
   "vars": {
     // "workers-ai" or "heuristic" (no model; useful offline).
     "DRAFTER": "workers-ai",
-    "MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    "MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    // Where the web app is served; passkeys are bound to these origins.
+    "WEB_ORIGINS": "https://okayed.pages.dev,http://localhost:5173,http://localhost:5174"
   },
   // Secrets (wrangler secret put): ISSUER_SECRET (64 hex chars), GITHUB_TOKEN (optional, for the demo tool).
   "observability": { "enabled": true },
@@ -26,12 +34,15 @@
     // `wrangler dev --env local`: everything but Workers AI, so it runs without a Cloudflare login.
     "local": {
       "durable_objects": {
-        "bindings": [{ "name": "OkayedAgent", "class_name": "OkayedAgent" }]
+        "bindings": [
+          { "name": "OkayedAgent", "class_name": "OkayedAgent" },
+          { "name": "OkayedChat", "class_name": "OkayedChat" }
+        ]
       },
       "workflows": [
         { "name": "okayed-grant-lifecycle", "binding": "GRANT_LIFECYCLE", "class_name": "GrantLifecycle" }
       ],
-      "vars": { "DRAFTER": "heuristic" }
+      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174" }
     }
   }
 }
