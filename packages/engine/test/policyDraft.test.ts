@@ -54,27 +54,23 @@ describe("narrowPolicy: what the sentence says", () => {
     expect(r.beyond[0]).toMatchObject({ field: "uses", asked: "50", granted: "10" });
   });
 
-  it("asks how long or how many when a risky standing allow has no bound", () => {
-    const r = run("auto-approve merges", [{ effect: "allow", act: "github.pr.merge" }]);
-    expect(r).toMatchObject({ kind: "question", options: ["for 1 day", "for 1 week", "up to 10 times", "forever"] });
-  });
-
-  it("honors “forever” as the person's choice, and warns", () => {
-    const r = rules("auto-approve merges forever", [{ effect: "allow", act: "github.pr.merge", ttl: 3600 }]);
+  it("an open-ended standing allow is the person's choice", () => {
+    const r = rules("auto-approve merges", [{ effect: "allow", act: "github.pr.merge" }]);
+    expect(r.rules[0]).toMatchObject({ effect: "allow", act: "github.pr.merge" });
     expect(r.rules[0]!.until).toBeUndefined();
-    expect(r.warnings[0]!.message).toMatch(/no end date and no budget/);
+    expect(r.rules[0]!.budget).toBeUndefined();
   });
 
-  it("lets medium-risk standing allows run open-ended, with a note", () => {
-    const r = rules("auto-approve staging deploys", [{ effect: "allow", act: "site.deploy" }]);
-    expect(r.rules[0]).toMatchObject({ act: "site.deploy", res: "site:*/staging" });
-    expect(r.notes[0]).toMatch(/no end date/);
+  it("“forever” beats a draft's shorter lifetime", () => {
+    expect(rules("auto-approve merges forever", [{ effect: "allow", act: "github.pr.merge", ttl: 3600 }]).rules[0]!.until).toBeUndefined();
   });
 
-  it("caps a standing policy at 30 days unless told “forever”", () => {
-    const r = rules("auto-approve merges for 12 weeks", [{ effect: "allow", act: "github.pr.merge" }]);
-    expect(r.rules[0]!.until).toBe(NOW + 30 * DAY);
-    expect(r.beyond[0]).toMatchObject({ field: "until", granted: "30 d" });
+  it("scopes a standing allow to the environment named", () => {
+    expect(rules("auto-approve staging deploys", [{ effect: "allow", act: "site.deploy" }]).rules[0]).toMatchObject({ act: "site.deploy", res: "site:*/staging" });
+  });
+
+  it("keeps a long duration as said", () => {
+    expect(rules("auto-approve merges for 12 weeks", [{ effect: "allow", act: "github.pr.merge" }]).rules[0]!.until).toBe(NOW + 84 * DAY);
   });
 });
 

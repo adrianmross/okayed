@@ -1,5 +1,5 @@
 import { policyClauses, type PolicyClause } from "./anchors.ts";
-import { CATALOG, riskAtLeast } from "./catalog.ts";
+import { CATALOG } from "./catalog.ts";
 import { shortDuration } from "./format.ts";
 import { lint, type LintWarning } from "./policy.ts";
 import { matchAct } from "./resource.ts";
@@ -38,8 +38,6 @@ export interface DraftRule {
 }
 
 const STRICT: Record<Effect, number> = { allow: 0, ask: 1, deny: 2 };
-/** The longest a standing policy stands unless the person says "forever". */
-export const MAX_HORIZON = 30 * 86400;
 const KNOWN_CONDITIONS = new Set(["checks.pass"]);
 
 const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) && x > 0 ? Math.floor(x) : undefined);
@@ -69,7 +67,7 @@ function within(a: string, b: string): boolean {
 /**
  * Turns a model's policy draft into standing policies for the person's layer, kept to what each clause of the
  * sentence says: the actions it names, an effect no looser than its words, its targets, its agent, its duration and
- * count. A risky auto-approval with no end and no count is a question, not a guess; "forever" is the person's call.
+ * count. How open-ended a policy is stays the person's call; the draft can only make it narrower.
  */
 export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
   const { now } = input;
@@ -148,10 +146,6 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
       if (life !== undefined && draftTtl > life) beyond.push({ field: "until", asked: shortDuration(draftTtl), granted: shortDuration(life), why: `you said ${shortDuration(life)}` });
       else if (!clause.unbounded) life = draftTtl;
     }
-    if (life !== undefined && life > MAX_HORIZON) {
-      beyond.push({ field: "until", asked: shortDuration(life), granted: shortDuration(MAX_HORIZON), why: "standing policies last at most 30 days unless you say “forever”" });
-      life = MAX_HORIZON;
-    }
     if (life !== undefined) rule.until = now + life;
 
     // Count: what was said; a draft may only lower it. A risk budget from the draft only narrows.
@@ -178,18 +172,6 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
     }
     if (when.length && finalEffect === "allow") rule.when = when;
 
-    // A standing allow over risky actions needs an end, a count or an explicit "forever": ask rather than guess.
-    const risky = Object.keys(CATALOG).filter((a) => matchAct(finalAct, a) && riskAtLeast(CATALOG[a]!.risk, "high"));
-    if (finalEffect === "allow" && risky.length && rule.until === undefined && !rule.budget && !clause.unbounded) {
-      const what = CATALOG[risky[0]!]!.noun;
-      return {
-        kind: "question",
-        question: `For how long should agents keep ${what} without asking you, or how many times?`,
-        options: ["for 1 day", "for 1 week", "up to 10 times", "forever"],
-        beyond,
-      };
-    }
-    if (finalEffect === "allow" && rule.until === undefined && !rule.budget) notes.push(`“${clause.text}” has no end date; remove it any time under Policy.`);
     rules.push(rule);
   }
 

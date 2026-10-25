@@ -1,5 +1,5 @@
 import { DEFAULT_POSTURE, decideAll, YOU, type Policy, type Rule } from "@okayed/engine";
-import { h, questionLine, ruleBlock, verdictView, type Question } from "@okayed/ui";
+import { budgetBlock, budgetPresets, h, questionLine, ruleBlock, verdictView, type Question } from "@okayed/ui";
 import type { App } from "../app.ts";
 
 let question: Question | null = null;
@@ -17,7 +17,9 @@ const PRESETS = [
  */
 export function policyView(app: App): HTMLElement {
   const { snap } = app;
-  const policy: Policy = { layers: snap.policy.layers };
+  const budgets = snap.policy.budgets;
+  const policy: Policy = { layers: snap.policy.layers, ...(budgets.length ? { budgets } : {}) };
+  const saveBudgets = (next: typeof budgets, ok: string) => app.run("PUT", "/budgets", { budgets: next }, ok);
   const mine = policy.layers.find((l) => l.name === YOU);
   const agents = snap.agents.map((a) => a.id);
   const targets = [
@@ -64,6 +66,24 @@ export function policyView(app: App): HTMLElement {
             )
           : h("div", { class: "note" }, "No policies, so everything asks you."),
       ),
+    ),
+    h(
+      "section",
+      { class: "card" },
+      h("div", { class: "card-head" }, h("strong", { style: "color:var(--ink)" }, "Shared budgets"), h("span", null, "optional; span every policy in their scope")),
+      budgets.length
+        ? h(
+            "div",
+            { class: "blocks" },
+            budgets.map((b, i) =>
+              budgetBlock(b, snap.now, snap.usage, {
+                remove: () => saveBudgets(budgets.filter((_, j) => j !== i), "Budget removed."),
+                topUp: () => app.run("POST", `/rules/${encodeURIComponent(`budget:${b.id}`)}/topup`, undefined, "Topped up."),
+              }),
+            ),
+          )
+        : h("div", { class: "note" }, "None. Add one to cap auto-approvals across policies: for everything, one action, or one agent."),
+      h("div", { class: "chips" }, budgetPresets(snap.now).map(([label, b]) => h("button", { class: "chip", type: "button", onclick: () => saveBudgets([...budgets, b], "Budget added.") }, `+ ${label}`))),
     ),
     snap.policy.warnings.map((w) => h("div", { class: "note" }, w)),
   );

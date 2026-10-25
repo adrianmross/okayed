@@ -126,16 +126,16 @@ export function riskCost(act: string, res: string[]): number {
 }
 
 /**
- * The starting posture ("balanced"): reads and comments go ahead, merges go ahead when checks pass and staging
- * deploys go ahead, each within a budget; production deploys and spending ask. These are ordinary rules in the
- * person's own layer, so they can change or delete any of them.
+ * The starting posture ("balanced"): reads and comments go ahead, merges go ahead when checks pass, staging and
+ * preview deploys go ahead; production deploys and spending ask. No budgets: those are the person's to add, on one
+ * policy or shared across many. These are ordinary rules in the person's own layer, so any of them can change.
  */
 export const DEFAULT_POSTURE: Rule[] = [
   { id: "posture:read", effect: "allow", act: "github.read", note: "reading GitHub goes ahead" },
-  { id: "posture:comment", effect: "allow", act: "github.pr.comment", budget: { uses: 20 }, note: "up to 20 comments, then ask" },
-  { id: "posture:merge", effect: "allow", act: "github.pr.merge", when: [{ c: "checks.pass" }], budget: { risk: 40 }, note: "merges go ahead when checks pass, within a budget" },
-  { id: "posture:staging", effect: "allow", act: "site.deploy", res: "site:*/staging", budget: { risk: 30 }, note: "staging deploys go ahead, within a budget" },
-  { id: "posture:preview", effect: "allow", act: "site.deploy", res: "site:*/preview", budget: { risk: 30 }, note: "preview deploys go ahead, within a budget" },
+  { id: "posture:comment", effect: "allow", act: "github.pr.comment", note: "commenting goes ahead" },
+  { id: "posture:merge", effect: "allow", act: "github.pr.merge", when: [{ c: "checks.pass" }], note: "merges go ahead when checks pass" },
+  { id: "posture:staging", effect: "allow", act: "site.deploy", res: "site:*/staging", note: "staging deploys go ahead" },
+  { id: "posture:preview", effect: "allow", act: "site.deploy", res: "site:*/preview", note: "preview deploys go ahead" },
   { id: "posture:production", effect: "ask", act: "site.deploy", res: "site:*/production", note: "production deploys ask you" },
   { id: "posture:spend", effect: "ask", act: "spend.money", note: "spending money asks you" },
 ];

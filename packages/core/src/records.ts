@@ -1,4 +1,4 @@
-import type { Beyond, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, Targets, Usage, UseCode } from "@okayed/engine";
+import type { Beyond, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, SharedBudget, Targets, Usage, UseCode } from "@okayed/engine";
 import type { Grant, NostrEvent } from "@okayed/grant";
 
 /** Everything okayed stores for one person, and the snapshot their browser sees. */
@@ -85,6 +85,8 @@ export interface GrantRecord {
   used: number;
   status: GrantStatus;
   revokedAt?: number;
+  /** The budgets this grant drew on when it was issued (rule ids and `budget:<id>`). */
+  drew?: string[];
   revokeReason?: string;
 }
 
@@ -124,7 +126,7 @@ export interface Snapshot {
   now: number;
   paused: boolean;
   stoppedAt?: number;
-  policy: { layers: Layer[]; described: { layer: string; rules: { id: string; text: string; effect: string; until?: number }[] }[]; warnings: string[] };
+  policy: { budgets: SharedBudget[]; layers: Layer[]; described: { layer: string; rules: { id: string; text: string; effect: string; until?: number }[] }[]; warnings: string[] };
   cards: Card[];
   requests: RequestRecord[];
   grants: (GrantRecord & { sentence: string })[];

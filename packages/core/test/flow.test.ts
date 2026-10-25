@@ -264,17 +264,19 @@ describe("standing policies", () => {
     return { r, st: await t.svc.requestStatus(assistant, r.request.id) };
   }
 
-  it("the default posture merges when checks pass, and charges its budget", async () => {
+  it("the default posture merges when checks pass, with no budget, and names the policy", async () => {
     await fresh();
     const { r, st } = await ask(182);
     expect(r.status).toBe("approving");
     const opened = openGrantEvent(st!.grant!);
     expect(opened.ok && opened.grant).toMatchObject({ when: [{ c: "checks.pass" }], assurance: { method: "policy", policy: ["posture:merge"] } });
-    expect((await t.svc.snapshot()).usage).toEqual({ "posture:merge": { uses: 1, risk: 8 } });
+    for (let n = 1; n <= 8; n++) expect((await ask(n)).st!.status).toBe("granted");
+    expect((await t.svc.snapshot()).usage["posture:merge"]).toEqual({ uses: 9, risk: 72 });
   });
 
-  it("a spent budget asks, says what spent it, and topping up lets it continue", async () => {
+  it("a policy's own budget asks once spent, says what spent it, and a top-up lets it continue", async () => {
     await fresh();
+    await t.svc.setRules([{ id: "merges", effect: "allow", act: "github.pr.merge", budget: { uses: 5 } }]);
     for (let n = 1; n <= 5; n++) {
       expect((await ask(n)).st!.status).toBe("granted");
       await t.clock.advance(1);
@@ -282,10 +284,36 @@ describe("standing policies", () => {
     const sixth = await ask(6);
     expect(sixth.r.status).toBe("pending");
     const card = (await t.svc.snapshot()).cards.find((c) => c.id === sixth.r.cardId)!;
-    expect(card.topUp).toBe("posture:merge");
-    expect(card.notes.join()).toMatch(/budget is spent: 5 auto-approvals using 40 risk, most recently PR #5 in adrianmross\/okayed; PR #4/);
-    await t.svc.topUp("posture:merge");
+    expect(card.topUp).toBe("merges");
+    expect(card.notes.join()).toMatch(/budget is spent: 5 uses using 40 risk, most recently PR #5 in adrianmross\/okayed; PR #4/);
+    await t.svc.topUp("merges");
     expect((await ask(7)).st!.status).toBe("granted");
+  });
+
+  it("a shared budget spans policies, and can count your own okays too", async () => {
+    await fresh();
+    await t.svc.setBudgets([{ id: "today", risk: 16, counts: "all", note: "today" }]);
+    expect((await ask(1)).st!.status).toBe("granted");
+    // Approving one by hand also draws on a pool that counts everything.
+    await t.svc.setRules([]);
+    const manual = await ask(2);
+    await t.svc.confirm(manual.r.cardId!);
+    await settle();
+    expect((await t.svc.snapshot()).usage["budget:today"]).toEqual({ uses: 2, risk: 16 });
+    await t.svc.setRules([{ id: "m", effect: "allow", act: "github.pr.merge" }]);
+    const third = await ask(3);
+    expect(third.r.status).toBe("pending");
+    const card = (await t.svc.snapshot()).cards.find((c) => c.id === third.r.cardId)!;
+    expect(card.topUp).toBe("budget:today");
+    expect(card.notes.join()).toMatch(/shared budget “today” is spent: 2 uses using 16 risk/);
+    await t.svc.topUp("budget:today");
+    expect((await ask(4)).st!.status).toBe("granted");
+  });
+
+  it("budgets are checked before they're stored", async () => {
+    await fresh();
+    await expect(t.svc.setBudgets([{ id: "x" }])).rejects.toThrow(/uses, an amount of risk/);
+    await expect(t.svc.topUp("budget:nope")).rejects.toThrow(/no budget/);
   });
 
   it("a standing policy said in words takes over for its scope", async () => {

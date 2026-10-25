@@ -20,8 +20,10 @@ describe("the default posture", () => {
     expect(decide(p, "github.pr.merge", PR, NOW, ASSISTANT).when).toEqual([{ c: "checks.pass" }]);
   });
 
-  it("charges a merge against the merge budget at its risk cost", () => {
-    expect(decide(p, "github.pr.merge", PR, NOW, ASSISTANT).charges).toEqual([{ layer: "you", rule: "posture:merge", cost: 8 }]);
+  it("has no budgets, but still counts which policy allowed each use", () => {
+    expect(decide(p, "github.pr.merge", PR, NOW, ASSISTANT).charges).toEqual([{ key: "posture:merge", cost: 8 }]);
+    expect(p.budgets).toBeUndefined();
+    expect(p.layers[0]!.rules.some((r) => r.budget)).toBe(false);
   });
 
   it("is ordinary rules the person can change", () => {
@@ -63,12 +65,48 @@ describe("standing policies", () => {
 
   it("one grant over several targets draws once", () => {
     const r: Rule = { id: "rd", effect: "allow", act: "github.read", budget: { uses: 5 } };
-    expect(decideAll(you(r), "github.read", ["github:a/b", "github:a/c"], NOW).charges).toEqual([{ layer: "you", rule: "rd", cost: 1 }]);
+    expect(decideAll(you(r), "github.read", ["github:a/b", "github:a/c"], NOW).charges).toEqual([{ key: "rd", cost: 1 }]);
   });
 
   it("caps each grant they issue", () => {
     const r: Rule = { id: "r", effect: "allow", act: "github.read", maxTtl: 600, maxUses: 3 };
     expect(decide(you(r), "github.read", "github:a/b", NOW).caps).toEqual({ ttl: 600, uses: 3 });
+  });
+});
+
+describe("shared budgets", () => {
+  const merges = defaultPolicy();
+  const withPool = (pool: Record<string, unknown>): Policy => ({ ...merges, budgets: [{ id: "pool", ...pool }] });
+
+  it("a global pool draws on everything auto-approved, alongside a rule's own budget", () => {
+    const p: Policy = { layers: [personalLayer([{ id: "m", effect: "allow", act: "github.pr.merge", budget: { uses: 5 } }])], budgets: [{ id: "week", risk: 100 }] };
+    expect(decide(p, "github.pr.merge", PR, NOW, ASSISTANT).charges).toEqual([{ key: "m", cost: 8 }, { key: "budget:week", cost: 8 }]);
+  });
+
+  it("a spent pool turns a yes into a question, and says which pool", () => {
+    const d = decide(withPool({ risk: 10 }), "github.pr.merge", PR, NOW, { ...ASSISTANT, usage: { "budget:pool": { uses: 1, risk: 8 } } });
+    expect(d).toMatchObject({ verdict: "ask", spent: "budget:pool", decidedBy: "budget:pool" });
+    expect(d.reason).toMatch(/shared budget “pool” is spent/);
+  });
+
+  it("can be scoped to one action, or one agent", () => {
+    const perMerge = withPool({ scope: { act: "github.pr.merge" }, uses: 1 });
+    const used = { "budget:pool": { uses: 1, risk: 8 } };
+    expect(decide(perMerge, "github.pr.merge", PR, NOW, { ...ASSISTANT, usage: used }).verdict).toBe("ask");
+    expect(decide(perMerge, "github.read", "github:adrianmross/okayed", NOW, { ...ASSISTANT, usage: used }).verdict).toBe("allow");
+    const perAgent = withPool({ scope: { agent: "agent:buzz" }, uses: 0 });
+    expect(decide(perAgent, "github.read", "github:a/b", NOW, ASSISTANT).verdict).toBe("allow");
+    expect(decide(perAgent, "github.read", "github:a/b", NOW, { agent: "agent:buzz" }).verdict).toBe("ask");
+  });
+
+  it("counts your own okays only when asked to", () => {
+    const asking = { layers: [personalLayer([])] };
+    expect(decide({ ...asking, budgets: [{ id: "all", risk: 50, counts: "all" }] }, "github.pr.merge", PR, NOW, ASSISTANT).tallies).toEqual([{ key: "budget:all", cost: 8 }]);
+    expect(decide({ ...asking, budgets: [{ id: "auto", risk: 50 }] }, "github.pr.merge", PR, NOW, ASSISTANT).tallies).toEqual([]);
+  });
+
+  it("stops applying at its end", () => {
+    expect(decide(withPool({ uses: 0, until: NOW }), "github.read", "github:a/b", NOW, ASSISTANT).verdict).toBe("allow");
   });
 });
 
@@ -85,8 +123,8 @@ describe("layers", () => {
 
   it("charges every layer that allowed by a budgeted rule", () => {
     const orgBudget: Layer = { name: "org", default: "abstain", rules: [{ id: "ob", effect: "allow", act: "github.*", budget: { risk: 100 } }] };
-    const d = decide({ layers: [orgBudget, personalLayer()] }, "github.pr.merge", PR, NOW, ASSISTANT);
-    expect(d.charges.map((c) => c.rule)).toEqual(["ob", "posture:merge"]);
+    const mine = personalLayer([{ id: "mb", effect: "allow", act: "github.pr.merge", budget: { uses: 9 } }]);
+    expect(decide({ layers: [orgBudget, mine] }, "github.pr.merge", PR, NOW, ASSISTANT).charges.map((c) => c.key)).toEqual(["ob", "mb"]);
   });
 
   it("deny anywhere wins", () => {
@@ -110,12 +148,6 @@ describe("layers", () => {
 });
 
 describe("lint", () => {
-  it("warns about standing authority over risky actions with no end and no budget", () => {
-    const w = lint(you({ id: "m", effect: "allow", act: "github.pr.merge" }), NOW);
-    expect(w[0]!.message).toMatch(/no end date and no budget/);
-    expect(lint(you({ id: "m", effect: "allow", act: "github.pr.merge", budget: { uses: 5 } }), NOW)).toEqual([]);
-  });
-
   it("flags a rule a layer above makes ineffective", () => {
     const org: Layer = { name: "org", default: "abstain", rules: [{ id: "o", effect: "ask", act: "github.pr.merge" }] };
     const w = lint({ layers: [org, personalLayer([{ id: "w", effect: "allow", act: "github.pr.merge", budget: { uses: 1 } }])] }, NOW);

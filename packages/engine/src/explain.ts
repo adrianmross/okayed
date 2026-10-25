@@ -2,7 +2,7 @@ import { CATALOG } from "./catalog.ts";
 import { longDuration } from "./format.ts";
 import type { NarrowResult } from "./narrow.ts";
 import { isPattern, labelRes, parseRes } from "./resource.ts";
-import type { Beyond, GrantDraft, Request, Rule, Unix, Usage } from "./types.ts";
+import type { Beyond, GrantDraft, Request, Rule, SharedBudget, Unix, Usage } from "./types.ts";
 
 /**
  * Deterministic wording for cards. The model may add a friendlier sentence, but these lines are what the
@@ -112,6 +112,7 @@ export function ruleParts(r: Rule, now: Unix, usage?: Usage): RuleParts {
   if (r.agent) parts.agent = r.agent.replace(/^agent:/, "");
   if (r.res && r.res !== "**") parts.where = patternLabel(r.res);
   if (r.when?.length) parts.only = r.when.map((c) => (c.c === "checks.pass" ? "checks pass" : c.c === "before" && typeof c.v === "number" ? `before ${day(c.v)}` : c.c)).join(" and ");
+  if (!r.budget && r.effect === "allow" && usage?.[r.id]?.uses) parts.budget = `used ${usage[r.id]!.uses} time${usage[r.id]!.uses === 1 ? "" : "s"}`;
   if (r.budget) {
     const spent = usage?.[r.id] ?? { uses: 0, risk: 0 };
     const bits: string[] = [];
@@ -137,4 +138,16 @@ export function describeRule(r: Rule, now: Unix, usage?: Usage): string {
   if (tail.length) s += `, ${tail.join(", ")}`;
   if (p.horizon) s += p.horizon === "ended" ? " (ended)" : ` ${p.horizon}`;
   return s;
+}
+
+/** A shared budget the way people read it: "everything assistant does: 32 of 50 risk left, for 6 days". */
+export function describeBudget(b: SharedBudget, now: Unix, usage?: Usage): { scope: string; left: string; horizon?: string; counts: string } {
+  const s = b.scope ?? {};
+  const what = s.act ? (s.act.endsWith("*") ? `anything under ${s.act.replace(/\.?\*$/, "")}` : CATALOG[s.act]?.noun ?? s.act) : "everything";
+  const scope = [what, s.agent ? `by ${s.agent.replace(/^agent:/, "")}` : "", s.res ? `in ${patternLabel(s.res)}` : ""].filter(Boolean).join(" ");
+  const spent = usage?.[`budget:${b.id}`] ?? { uses: 0, risk: 0 };
+  const left = [b.uses !== undefined ? `${Math.max(0, b.uses - spent.uses)} of ${b.uses} left` : "", b.risk !== undefined ? `${Math.max(0, b.risk - spent.risk)} of ${b.risk} risk left` : ""].filter(Boolean).join(", ");
+  const out: { scope: string; left: string; horizon?: string; counts: string } = { scope, left, counts: b.counts === "all" ? "counts your okays too" : "counts auto-approvals" };
+  if (b.until !== undefined) out.horizon = b.until > now ? `for ${longDuration(b.until - now)}` : "ended";
+  return out;
 }

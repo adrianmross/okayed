@@ -3,6 +3,7 @@ import {
   canonRes,
   checkUse,
   decideAll,
+  checkBudget,
   checkRule,
   describeRequestSentence,
   describeRule,
@@ -17,6 +18,7 @@ import {
   type Policy,
   type Request,
   type Rule,
+  type SharedBudget,
   type Targets,
   type Usage,
 } from "@okayed/engine";
@@ -211,10 +213,9 @@ export class OkayedService implements FlowTarget {
         return { rec, card: null as Card | null, auto: false };
       }
       const card = grantCard(`c_${this.d.random.hex(8)}`, result, "request", now);
-      const spent = result.decision.layers.find((l) => l.spent && l.rule);
-      if (spent?.rule) {
-        card.topUp = spent.rule.id;
-        card.notes.push(await this.statement(tx, spent.rule));
+      if (result.decision.spent) {
+        card.topUp = result.decision.spent;
+        card.notes.push(await this.statement(tx, result.decision.spent));
       }
       const auto = result.decision.verdict === "allow" && !meta.paused;
       if (auto) card.status = "confirming";
@@ -390,16 +391,29 @@ export class OkayedService implements FlowTarget {
     return next.rules;
   }
 
-  /** Resets what a policy has spent, so it can auto-approve again. One decision over everything it already did. */
-  async topUp(ruleId: string): Promise<void> {
+  /** Replaces the shared budgets. None is a fine answer: budgets are opt-in. */
+  async setBudgets(budgets: unknown): Promise<SharedBudget[]> {
+    if (!Array.isArray(budgets)) throw new OkayedError(400, "budgets must be a list");
+    const problems = budgets.flatMap((b, i) => checkBudget(b).map((p) => `budget ${i + 1}: ${p}`));
+    if (problems.length) throw new OkayedError(400, problems.join("; "));
+    const list = budgets as SharedBudget[];
     await this.d.store.transaction(async (tx) => {
-      const rule = (await this.layer(tx)).rules.find((r) => r.id === ruleId);
-      if (!rule?.budget) throw new OkayedError(404, "no budgeted rule with that id");
+      await tx.put("budgets", list);
+      await this.audit(tx, { type: "policy", text: list.length ? `Shared budgets set: ${list.map((b) => b.note ?? b.id).join(", ")}.` : "Shared budgets removed." });
+    });
+    return list;
+  }
+
+  /** Resets what a budget has spent (a rule's id, or `budget:<id>`). One decision over everything it already did. */
+  async topUp(key: string): Promise<void> {
+    await this.d.store.transaction(async (tx) => {
+      const label = await this.budgetLabel(tx, key);
+      if (!label) throw new OkayedError(404, "no budget with that id");
       const usage = await this.usage(tx);
-      const before = usage[ruleId] ?? { uses: 0, risk: 0 };
-      delete usage[ruleId];
+      const before = usage[key] ?? { uses: 0, risk: 0 };
+      delete usage[key];
       await tx.put("usage", usage);
-      await this.audit(tx, { type: "policy", text: `Topped up “${describeRule(rule, this.d.clock.now())}” after ${before.uses} auto-approval(s), ${before.risk} risk.`, ref: ruleId });
+      await this.audit(tx, { type: "policy", text: `Topped up ${label} after ${before.uses} use(s), ${before.risk} risk.`, ref: key });
     });
   }
 
@@ -477,7 +491,7 @@ export class OkayedService implements FlowTarget {
     // A policy approval names the policies it draws on; the transaction below re-checks them before charging.
     if (assurance.method === "policy") {
       const planned = decideAll(await this.policy(this.d.store), draft.act, draft.res, now, { ...ctx, usage: await this.usage(this.d.store) });
-      assurance = { ...assurance, policy: planned.charges.map((c) => c.rule) };
+      assurance = { ...assurance, policy: planned.charges.map((c) => c.key) };
     }
     const grant = buildGrant(draft, this.d.signer.pubkey, assurance, this.d.random.hex(8));
     const event = await this.d.signer.sign(grantTemplate(grant));
@@ -497,22 +511,25 @@ export class OkayedService implements FlowTarget {
       const usage = await this.usage(tx);
       const decision = decideAll(await this.policy(tx), draft.act, draft.res, now, { ...ctx, usage });
       if (decision.verdict === "deny") return close(decision.reason);
+      // Auto-approvals draw on every budget that allowed them; your own okays draw only on pools that count them.
+      let draws = decision.tallies;
       if (assurance.method === "policy") {
         if (decision.verdict !== "allow") return close("policy no longer auto-approves this");
-        if (decision.charges.map((c) => c.rule).join() !== (assurance.policy ?? []).join()) return close("the policies changed while this was being issued");
-        for (const c of decision.charges) {
-          const u = usage[c.rule] ?? { uses: 0, risk: 0 };
-          usage[c.rule] = { uses: u.uses + 1, risk: u.risk + c.cost };
-        }
-        await tx.put("usage", usage);
+        if (decision.charges.map((c) => c.key).join() !== (assurance.policy ?? []).join()) return close("the policies changed while this was being issued");
+        draws = decision.charges;
       }
+      for (const c of draws) {
+        const u = usage[c.key] ?? { uses: 0, risk: 0 };
+        usage[c.key] = { uses: u.uses + 1, risk: u.risk + c.cost };
+      }
+      if (draws.length) await tx.put("usage", usage);
       let req: RequestRecord | undefined;
       if (draft.from.request) {
         req = await tx.get<RequestRecord>(`req:${draft.from.request}`);
         if (!req || req.status !== "pending") return close("the request is no longer pending");
         if (req.request.exp <= now) return close("the request expired");
       }
-      await tx.put<GrantRecord>(`grant:${grant.id}`, { grant, event, cardId, used: 0, status: "active" });
+      await tx.put<GrantRecord>(`grant:${grant.id}`, { grant, event, cardId, used: 0, status: "active", ...(draws.length ? { drew: draws.map((c) => c.key) } : {}) });
       c.status = "confirmed";
       c.grantId = grant.id;
       await tx.put(`card:${cardId}`, c);
@@ -638,7 +655,8 @@ export class OkayedService implements FlowTarget {
 
   private async policy(tx: Pick<Store, "get">): Promise<Policy> {
     const ceiling = await tx.get<Layer>("ceiling");
-    return { layers: [...(ceiling ? [ceiling] : []), await this.layer(tx)] };
+    const budgets = await this.budgets(tx);
+    return { layers: [...(ceiling ? [ceiling] : []), await this.layer(tx)], ...(budgets.length ? { budgets } : {}) };
   }
 
   private async layer(tx: Pick<Store, "get">): Promise<Layer> {
@@ -649,14 +667,29 @@ export class OkayedService implements FlowTarget {
     return (await tx.get<Usage>("usage")) ?? {};
   }
 
-  /** What spent a policy's budget: the last few grants it auto-approved, so topping it up is one informed decision. */
-  private async statement(tx: Pick<Store, "list" | "get">, rule: Rule): Promise<string> {
+  private async budgets(tx: Pick<Store, "get">): Promise<SharedBudget[]> {
+    return (await tx.get<SharedBudget[]>("budgets")) ?? [];
+  }
+
+  /** "“merges go ahead…”" for a rule's budget, "the shared budget “this week”" for a pool; null if neither exists. */
+  private async budgetLabel(tx: Pick<Store, "get">, key: string): Promise<string | null> {
+    if (key.startsWith("budget:")) {
+      const b = (await this.budgets(tx)).find((x) => `budget:${x.id}` === key);
+      return b ? `the shared budget “${b.note ?? b.id}”` : null;
+    }
+    const rule = (await this.layer(tx)).rules.find((r) => r.id === key);
+    return rule?.budget ? `“${describeRule(rule, this.d.clock.now())}”` : null;
+  }
+
+  /** What spent a budget: the last few grants that drew on it, so topping it up is one informed decision. */
+  private async statement(tx: Pick<Store, "list" | "get">, key: string): Promise<string> {
     const spentBy = [...(await tx.list<GrantRecord>("grant:")).values()]
-      .filter((g) => g.grant.assurance.policy?.includes(rule.id))
+      .filter((g) => (g.drew ?? g.grant.assurance.policy ?? []).includes(key))
       .sort((a, b) => b.grant.nbf - a.grant.nbf);
-    const u = (await this.usage(tx))[rule.id] ?? { uses: 0, risk: 0 };
+    const u = (await this.usage(tx))[key] ?? { uses: 0, risk: 0 };
     const recent = spentBy.slice(0, 3).map((g) => g.grant.res.map((r) => labelRes(r).replace(/ at [0-9a-f]{7}$/, "")).join(" and "));
-    return `Its budget is spent: ${u.uses} auto-approval${u.uses === 1 ? "" : "s"} using ${u.risk} risk${recent.length ? `, most recently ${recent.join("; ")}` : ""}. Top it up to let it continue.`;
+    const whose = key.startsWith("budget:") ? `The shared budget “${(await this.budgets(tx)).find((b) => `budget:${b.id}` === key)?.note ?? key.slice(7)}” is spent` : "Its budget is spent";
+    return `${whose}: ${u.uses} use${u.uses === 1 ? "" : "s"} using ${u.risk} risk${recent.length ? `, most recently ${recent.join("; ")}` : ""}. Top it up to let it continue.`;
   }
 
   private async targets(tx: Pick<Store, "get">): Promise<Targets> {

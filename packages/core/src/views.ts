@@ -39,7 +39,7 @@ export async function buildSnapshot(
     now,
     paused: meta.paused,
     ...(meta.stoppedAt !== undefined ? { stoppedAt: meta.stoppedAt } : {}),
-    policy: { layers: policy.layers, described: policy.layers.map(describe), warnings: lint(policy, now).map((w) => `${w.layer}/${w.rule}: ${w.message}`) },
+    policy: { layers: policy.layers, budgets: policy.budgets ?? [], described: policy.layers.map(describe), warnings: lint(policy, now).map((w) => `${w.layer}/${w.rule}: ${w.message}`) },
     cards,
     requests,
     grants,
