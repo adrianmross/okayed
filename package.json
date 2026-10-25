@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -13,10 +15,12 @@
     "dev:worker": "pnpm --filter @okayed/worker dev",
     "dev:local": "pnpm --filter @okayed/worker dev:local",
     "dev:web": "pnpm --filter @okayed/web dev",
-    "dev:playground": "pnpm --filter @okayed/playground dev"
+    "dev:playground": "pnpm --filter @okayed/playground dev",
+    "e2e": "node scripts/smoke.mjs && node scripts/e2e-web.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.0.5"
+    "vitest": "^4.0.5",
+    "playwright": "1.63.0"
   }
 }
