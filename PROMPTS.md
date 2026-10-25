@@ -129,3 +129,22 @@ My calls: start from a balanced posture, and keep okayed's own v0 wire format.
 - `feat: make budgets opt-in, on one policy or shared across policies`
 - `docs: describe opt-in and shared budgets`
 - `docs: bring the prompt history up to date`
+
+## 7. A chat demo on its own design system
+
+```text
+For the demo, it should just be a standard chat where you ask for things that need permission. It doesn't actually
+do anything but show the card to approve, Face ID, and approve. Different views can show receipts or transcripts.
+Use the latest shadcn, and show tool calls in the chat. The UI so far is still way too complex: it needs clear,
+enjoyable configuration, and it doesn't need to cram everything onto one page. Siri Shortcuts is good inspiration for
+building rules. Make your own design system for this project (it can be standalone) so it feels cohesive.
+```
+
+- `feat: add an agent client and an MCP server for agents`
+- `feat(design): add okayed's design system on the latest shadcn`
+- `feat: add passkey approvals and a demo chat agent with simulated tools`
+- `feat(web): rebuild as a chat demo with Face ID approvals and Shortcuts-style policies`
+- `feat(playground): rebuild on the design system`
+- `fix(core): let the scripted assistant read denials however they arrive`
+- `test: run the demo end to end in a browser with a virtual Face ID`
+- `docs: describe the chat demo, passkey assurance and the design system`
