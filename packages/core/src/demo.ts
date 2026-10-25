@@ -181,7 +181,10 @@ export function scriptedStep(prompt: LanguageModelV4Prompt): Step {
     const r = results[results.length - 1];
     if (!r) return { text: "Okay." };
     const out = r.output;
-    if (out.type === "execution-denied") return { text: `Okay, I won't. ${out.reason ? `(${out.reason}.)` : ""}`.trim() };
+    if (out.type === "execution-denied") return { text: `Okay, I won't. ${out.reason ? `(${out.reason.replace(/\.$/, "")}.)` : ""}`.trim() };
+    // Denials can also arrive as text, depending on how the transcript was converted.
+    if ((out.type === "error-text" || out.type === "text") && /denied|declined|not approved|said no/i.test(out.value)) return { text: "Okay, I won't." };
+    if (out.type === "error-text") return { text: `I couldn't: ${out.value}` };
     if (out.type === "json" && out.value && typeof out.value === "object") {
       const v = out.value as Record<string, unknown>;
       if (v.done === true) return { text: `Done: ${v.summary} This was simulated, approved by ${v.approvedBy}; the grant is now used up.` };
