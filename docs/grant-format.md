@@ -109,6 +109,33 @@ refuses it as well (`sha` parameter).
 | `checks.pass` | — | The pinned commit's required checks are green (the verifier asks GitHub). |
 | `before` | unix s | Now is before `v` (a tighter cut-off than `exp`). |
 
+## Passkey assurance
+
+When the person approves with a passkey, `assurance` is:
+
+```json
+{
+  "method": "webauthn",
+  "at": 1761735598,
+  "proof": {
+    "credential": "<credential id, base64url>",
+    "publicKey": "<COSE public key, base64url>",
+    "rpID": "okayed.pages.dev",
+    "origin": "https://okayed.pages.dev",
+    "binding": { "v": 0, "card": "c_…", "draft": "<sha256(JCS(draft))>", "nonce": "…" },
+    "response": { "clientDataJSON": "…", "authenticatorData": "…", "signature": "…" }
+  }
+}
+```
+
+To check it:
+
+1. Recompute the challenge as `base64url(sha256(JCS(binding)))`. It must equal `clientDataJSON.challenge`.
+2. Check `binding.draft` against the grant: the draft is the grant without `id`, `iss`, `assurance`, `nonce` and
+   `v`, and with `nbf`/`exp` as proposed.
+3. Verify the signature over `authenticatorData || sha256(clientDataJSON)` with `publicKey`, with user verification
+   required.
+
 ## Other objects
 
 ```ts

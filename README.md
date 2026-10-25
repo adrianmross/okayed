@@ -8,12 +8,33 @@ grant before it acts.
 > "I approve merging #182" → **Lets assistant merge PR #182 in adrianmross/okayed at 3f9a1c2, once, within the next 15
 > minutes.** It does not cover any other PR, a newer commit, a second use, or any other agent.
 
-- **Web app:** _deployed link goes here_ · **Playground:** _deployed link goes here_
-- Runs on Cloudflare: Workers AI (Llama 3.3), Agents SDK, a Durable Object per user, Workflows, and Pages. The core
-  is provider-agnostic.
+- **Web demo:** _deployed link goes here_ · **Playground:** _deployed link goes here_
+- Runs on Cloudflare: Workers AI (Llama 3.3), Agents SDK (a Durable Object per user, `AIChatAgent` for the chat),
+  Workflows, and Pages. The core is provider-agnostic.
 - MIT licensed. The full prompt history behind this AI-assisted build is in [`PROMPTS.md`](PROMPTS.md).
 
-![A chat approval narrowed to one PR, one commit, one use](docs/img/web-card.png)
+## The demo
+
+Chat with **Assistant**, an assistant that can merge pull requests, deploy sites, comment and buy things. Its tools are
+simulated: nothing real happens. Every tool call still goes through okayed, and the approvals and grants are real.
+
+- If your policies allow the call, it goes ahead. A once-only grant is signed, and a receipt appears in the chat.
+- If they don't, an approval card appears under the tool call: the plain sentence, the exact scope, the risk, and
+  what okayed cut from the draft. **Approve with Face ID** signs a WebAuthn assertion over that exact request, and
+  the assertion travels with the grant. Assistant then carries on.
+- If a policy says never, Assistant is refused and says so.
+
+Each conversation has three views: **Chat**, **Receipts** and **Transcript** (every tool input, output, okayed
+request and grant, as data). **Policies** is a library of standing rules you build like Siri Shortcuts. **Activity**
+has what's waiting, a receipt for every grant, and the log.
+
+| Assistant asks; you approve with Face ID | Then it carries on, with receipts |
+|---|---|
+| ![An approval card under Assistant's deploy tool call](docs/img/demo-approval.png) | ![Receipts for a merge approved by policy and a deploy approved with Face ID](docs/img/demo-chat.png) |
+
+| Policies, built like a Shortcut | The library on a phone |
+|---|---|
+| ![The Shortcuts-style policy editor](docs/img/demo-policy-editor.png) | ![Policy tiles on a phone](docs/img/demo-policies-mobile.png) |
 
 ## Why
 
@@ -103,18 +124,21 @@ tapping a pill, or in words. The model's draft of a policy can't widen what you 
 ## Repository layout
 
 ```
-packages/engine      pure decision engine: anchors, binding, narrowing, policy, use checks (79 tests)
+packages/engine      pure decision engine: anchors, binding, narrowing, standing policies, budgets, use checks
 packages/grant       grant format v0: JCS, ids, Nostr events, BIP-340 signatures, per-user issuer keys
 packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock),
                      the lifecycle flow, prompts, a model-free drafter, in-memory adapters, the GitHub tool
-apps/worker          Cloudflare: Agents SDK agent (Durable Object per user), Workflow, Workers AI drafter, HTTP API
+                     passkeys (WebAuthn), and the demo's tools and scripted model
+packages/design      okayed's design system: tokens, the latest shadcn components, AI Elements for chat, and
+                     okayed's approval card, receipts, policy tiles and Shortcuts-style editor (docs/design-system.md)
 packages/client      a dependency-free client for agents: ask, wait, merge
-packages/ui          shared DOM components and styles for both UIs (flat blocks)
-apps/web             Pages: Now (requests + chat), Grants, Policy, Activity, Setup; Debug switch for raw detail
-apps/playground      Pages: the engine in the browser; policy what-ifs and the narrowing demo
+apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedChat (AIChatAgent), the Workflow,
+                     Workers AI, the HTTP API
+apps/web             Pages: the demo (Chat, Policies, Activity, Settings), React on @okayed/design
+apps/playground      Pages: ask a policy, build one, and watch words narrow into a grant; the engine in the browser
 apps/mcp             MCP server so Assistant or any MCP agent asks okayed before acting
-docs/                design notes and the grant format
-scripts/smoke.mjs    end-to-end check against a running Worker
+docs/                design notes, grant format, design system
+scripts/             smoke.mjs (API, end to end) and e2e-web.mjs (the demo in a browser, Face ID included)
 ```
 
 ## Run it locally
@@ -127,14 +151,17 @@ pnpm test                      # engine, grant, core and worker tests
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars
 # put 64 hex chars in ISSUER_SECRET:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 pnpm dev:local                 # the Worker on :8787, Durable Objects + Workflows, no Cloudflare login
-pnpm dev:web                   # chat UI on :5173
-pnpm dev:playground            # playground on :5174
-node scripts/smoke.mjs         # request → approve in words → grant → first use OK → second use refused
+pnpm dev:web                   # the demo on :5173
+pnpm dev:playground            # the playground on :5174
+pnpm e2e                       # the API end to end, then the demo in a browser with a virtual Face ID
 ```
 
-`dev:local` runs every part except Workers AI, using the model-free `HeuristicDrafter`. The engine binds grants from
-your words either way, so the whole flow works offline. To use Llama 3.3, run `wrangler login` and then
-`pnpm dev:worker`. The model's drafts still go through the same engine.
+`dev:local` runs every part except Workers AI. Assistant is then played by a scripted model that reads intent with
+okayed's own anchors, and policy drafting uses the model-free `HeuristicDrafter`, so the whole demo works offline.
+To use Llama 3.3, run `wrangler login` and then `pnpm dev:worker`. The model only drafts; okayed still decides.
+
+Face ID works on `localhost`: browsers treat it as a secure context, and the Worker accepts passkeys from the
+origins in `WEB_ORIGINS`.
 
 ### Talk to it like an agent
 
@@ -221,10 +248,10 @@ Or add the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ISSUER_SECRET` r
 
 | Requirement | Here |
 |---|---|
-| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`), JSON-schema mode, for drafting and explaining (`apps/worker/src/adapters.ts`) |
-| Workflow / coordination | Agents SDK `Agent` as a Durable Object per user; `AgentWorkflow` for request → propose → await confirm → issue → expire/revoke (`apps/worker/src/workflow.ts`) |
-| User input | Chat on Pages (`apps/web`), with live state over the Agents SDK WebSocket. Voice via Realtime is a stretch goal and not built. |
-| Memory / state | Per-user policy layer, pending requests, cards, grants with use counters, audit log and chat, in Durable Object storage |
+| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`): Assistant's tool calling (`apps/worker/src/chat.ts`), plus drafting and explaining approvals and policies (`adapters.ts`) |
+| Workflow / coordination | Agents SDK: `OkayedAgent` (a Durable Object per user) and `OkayedChat` (`AIChatAgent`, per user); `AgentWorkflow` for request → propose → await confirm → issue → expire/revoke |
+| User input | Chat on Pages (`apps/web`), with AI SDK tool approval wired to okayed and live state over the Agents SDK WebSocket. Voice via Realtime is a stretch goal and not built. |
+| Memory / state | Chat history in `OkayedChat`'s SQLite; policies, budgets, requests, grants with use counters, passkeys and the audit log in `OkayedAgent` |
 
 ## Not tied to Cloudflare
 
@@ -247,8 +274,9 @@ the in-memory adapters in Node.
 
 ## Limitations (v0)
 
-- Identity is a bearer owner token per user and minted agent tokens. There are no accounts and no passkeys yet.
-  `assurance` records `web-click`.
+- Identity is a bearer owner token per user and minted agent tokens. Passkeys sign approvals, but don't yet sign
+  you in.
+- The demo's tools are simulated. The GitHub merge tool in `core/src/github.ts` is real and takes the same grants.
 - One action per grant. There are no delegation chains, and events are not yet published to relays.
 - `POST /verify` with `consume: true` requires the grant event, not just its id. Anyone holding the event can spend
   its use, which is safe for the intended flow (agent → tool) but is not proof of who the caller is.

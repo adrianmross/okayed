@@ -125,13 +125,33 @@ in `packages/core`:
 `packages/core` ships in-memory adapters, and its tests run the whole flow (request, propose, confirm, issue,
 verify, second use refused, revoke, expire) in Node.
 
-## Identity (v0)
+## Identity and assurance (v0)
 
-A user is a Durable Object named by a random id. The person's browser holds an owner token, and their agents get
-bearer tokens minted from the web UI. Grants are signed with a per-user key derived from the service secret
-(HKDF(secret, user id)), so `iss` differs per user and can be pinned by verifiers. `assurance` records how the
-person confirmed: `web-click` or `policy` today. A WebAuthn or hardware-key proof (`webauthn`, `approver`) can be
-added without changing the format.
+A user is a Durable Object named by a random id. The person's browser holds an owner token, and agents get bearer
+tokens minted from the web app. Grants are signed with a per-user key derived from the service secret
+(HKDF(secret, user id)), so `iss` differs per user and can be pinned by verifiers.
+
+`assurance` records how the person confirmed:
+
+- `policy`: a standing policy auto-approved it, and `assurance.policy` names the rules and budgets it drew on.
+- `webauthn`: the person approved with a passkey (Face ID, Touch ID, Windows Hello). The WebAuthn challenge is
+  `sha256(JCS({card, sha256(JCS(draft)), nonce}))`, so the assertion can only okay that exact draft. The assertion,
+  the binding and the public key ride on the grant as `assurance.proof`, so anyone can check it later.
+- `web-click`: a plain tap, where the browser has no passkey.
+
+A hardware key or an approver app's proof fits the same slot.
+
+## The demo agent
+
+`OkayedChat` is an Agents SDK `AIChatAgent` per person, playing Assistant with simulated tools. AI SDK tool approval hands
+every tool call to okayed:
+
+- allowed by policy → `approved`
+- asks → `user-approval`, and the chat shows okayed's card
+- refused → `denied`
+
+The tool's `execute` then looks up the grant and spends it, so an approval the client claims without a grant does
+nothing. Offline, a scripted model plays Assistant by reading intent with okayed's own anchors.
 
 ## How it fits with the rest of our stack
 

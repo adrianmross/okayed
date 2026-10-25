@@ -158,3 +158,19 @@ I don’t think risk budget needs to be enabled  by default and I think it could
 | `feat(engine)!: standing policies …`, `feat(core): …`, `feat(ui): edit standing policies …` | Policies as standing authority: agent scope, horizon, per-grant caps, conditions, budgets, top-ups. The fixed ceiling became an editable default posture. |
 | `feat: make budgets opt-in, …` | No budgets by default; budgets on one policy or shared (global, one action, one agent), optionally counting your own okays. |
 | `docs: …` | Design and grant format kept current. |
+
+## 9 — A chat demo, a real design system, and a simpler UI
+
+```text
+Maybe for the demo it should be just std chat and you ask stuff that reqs perms. It doesn’t actually do anything but show the card to approve, faceid and approves. Different views can show receipts or transcripts in chat. I’d use the latest from shadcn. Showing tool calls the chat, and everything. And then the ui you’ve showed me so far is still way too complex and needs better ux with clear and enjoyable configuration, don’t feel the need to cram it all on one. I think Siri Shortcuts is good inspiration for the rule/policy building. Make your own design system for this project (it can be standalone) so it feels cohesive
+```
+
+### What came out of prompt 9
+
+| Commit | What |
+|---|---|
+| `feat(design): …` | `@okayed/design`: tokens for light and dark (cobalt seal accent, semantic go-ahead/asks/never colours, Shortcuts-style action tiles), Onest and JetBrains Mono, the latest shadcn components from GitHub, AI Elements' chat and tool-call components adapted, and okayed's approval card, receipt, policy tile, token and seal. |
+| `feat: add passkey approvals and a demo chat agent …` | Face ID through WebAuthn, with the challenge bound to the exact draft and the assertion on the grant. `OkayedChat` (AIChatAgent) runs [redacted] with simulated tools; AI SDK tool approval hands each call to okayed, and the tool spends the grant, so a forged approval does nothing. A scripted model runs it offline. |
+| `feat(web): …` | The demo rebuilt in React: chat with tool calls, approval cards and receipts in line; Chat, Receipts and Transcript views; a Shortcuts-style policy library and editor; Activity; Settings. |
+| `feat(playground): …` | The playground on the same design system: ask a policy, build one, and watch words narrow into a grant. |
+| `test: …`, `docs: …` | A browser end-to-end run of the demo with a virtual Face ID; `docs/design-system.md`. |
