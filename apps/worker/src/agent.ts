@@ -27,9 +27,9 @@ import type { Env } from "./env.ts";
 export type ApiReply = { status: number; body: unknown };
 
 /** Methods the HTTP router may call, by who is calling. */
-const OWNER = ["passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events"] as const;
+const OWNER = ["passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events", "pairApprover", "unpairApprover"] as const;
 const AGENT = ["submitRequest", "requestStatus", "merge"] as const;
-const PUBLIC = ["verify", "issuer"] as const;
+const PUBLIC = ["verify", "issuer", "inbox", "answer"] as const;
 export type OwnerMethod = (typeof OWNER)[number];
 export type AgentMethod = (typeof AGENT)[number];
 export type PublicMethod = (typeof PUBLIC)[number];
@@ -195,6 +195,10 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
         return this.reply(() => s.topUp(String(a[0])));
       case "events":
         return this.reply(() => s.events());
+      case "pairApprover":
+        return this.reply(() => s.pairApprover(a[0], a[1]), 201);
+      case "unpairApprover":
+        return this.reply(() => s.unpairApprover(String(a[0])));
     }
   }
 
@@ -233,6 +237,9 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   async openApi(method: PublicMethod, args: unknown[]): Promise<ApiReply> {
     if (!PUBLIC.includes(method)) return { status: 404, body: { error: "no such method" } };
     if (method === "issuer") return this.reply(async () => ({ issuer: this.svc.issuer, kinds: KIND }));
+    // Approver apps authenticate themselves: a NIP-98 signature to read the inbox, a signed answer to reply.
+    if (method === "inbox") return this.reply(() => this.svc.inbox(typeof args[0] === "string" ? args[0] : null, String(args[1])));
+    if (method === "answer") return this.reply(() => this.svc.answer(args[0]));
     return this.reply(async () => {
       const body = (args[0] ?? {}) as { event?: unknown; grantId?: unknown; aud?: unknown; act?: unknown; res?: unknown; consume?: unknown; facts?: unknown };
       if (typeof body.aud !== "string" || typeof body.act !== "string" || typeof body.res !== "string") {

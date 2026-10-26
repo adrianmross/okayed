@@ -18,7 +18,7 @@ export async function buildSnapshot(
   targets: Targets,
   usage: Usage,
   now: number,
-): Promise<Omit<Snapshot, "passkeys">> {
+): Promise<Omit<Snapshot, "passkeys" | "approvers">> {
   const expiredIf = <T extends { status: string }>(r: T, lapsed: boolean): T => (lapsed ? { ...r, status: "expired" } : r);
   const cards = (await all<Card>(store, "card:")).sort((a, b) => b.createdAt - a.createdAt).slice(0, SHOWN);
   const requests = (await all<RequestRecord>(store, "req:"))

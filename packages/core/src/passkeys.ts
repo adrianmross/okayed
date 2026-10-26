@@ -4,12 +4,12 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import { hexToBytes, jcs, sha256Hex } from "@okayed/grant";
+import { challengeFor, type ApprovalBinding } from "./approvers.ts";
 
 /**
- * Passkeys (WebAuthn) for approving: Face ID, Touch ID, Windows Hello or a security key. The challenge for an
- * approval is the hash of what is being approved, so the signed assertion stored on the grant proves the person
- * okayed exactly that draft, and anyone with the public key can check it.
+ * Passkeys (WebAuthn), the local approver: Face ID, Touch ID, Windows Hello or a security key. The challenge is the
+ * card's binding (`approvers.ts`), so the signed assertion stored on the grant proves the person okayed exactly that
+ * draft, and anyone with the public key can check it.
  */
 
 /** Where the person's browser is: the relying party a passkey belongs to. */
@@ -28,14 +28,6 @@ export interface StoredPasskey {
   rpID: string;
   name: string;
   createdAt: number;
-}
-
-/** What an approval signs: the card, a hash of its draft, and a nonce. Its JCS hash is the WebAuthn challenge. */
-export interface ApprovalBinding {
-  v: 0;
-  card: string;
-  draft: string;
-  nonce: string;
 }
 
 /** Stored on the grant as `assurance.proof` when the person approved with a passkey. */
@@ -57,15 +49,6 @@ export function toB64url(bytes: Uint8Array): string {
 export function fromB64url(s: string): Uint8Array<ArrayBuffer> {
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4));
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
-}
-
-export function bindingFor(cardId: string, draft: unknown, nonce: string): ApprovalBinding {
-  return { v: 0, card: cardId, draft: sha256Hex(jcs(draft)), nonce };
-}
-
-/** The WebAuthn challenge for a binding: sha256 of its JCS form. */
-export function challengeFor(b: ApprovalBinding): Uint8Array<ArrayBuffer> {
-  return new Uint8Array(hexToBytes(sha256Hex(jcs(b))));
 }
 
 export async function registrationOptions(rp: RelyingParty, userId: string, existing: StoredPasskey[]) {
