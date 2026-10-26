@@ -60,7 +60,7 @@ export function WordsView() {
         </Field>
       </div>
       <div className="space-y-6">
-        <Field n="4" title="What the person is asked to approve">
+        <Field n="4" title="What the person is asked to allow">
           <Result r={r} />
         </Field>
         {r.kind === "grant" && (
@@ -101,7 +101,7 @@ function Result({ r }: { r: NarrowResult }) {
       cuts={r.beyond}
       state="pending"
       passkey="ready"
-      onApprove={() => toast("In the demo, this signs a once-only grant with Face ID.")}
+      onApprove={() => toast("In the demo, this signs a one-time permission with Face ID.")}
       onDeny={() => toast("Denied. Nothing would run.")}
     />
   );

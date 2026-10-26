@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const ROUTES = ["chat", "policies", "activity", "settings"] as const;
+export const ROUTES = ["chat", "rules", "activity", "settings"] as const;
 export type Route = (typeof ROUTES)[number];
 
 const read = (): Route => {

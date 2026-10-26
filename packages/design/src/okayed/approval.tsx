@@ -1,5 +1,5 @@
 import { humanDuration, labelRes, parseRes, type Beyond, type Condition, type Risk } from "@okayed/engine";
-import { ChevronRightIcon, ScanFaceIcon, ShieldAlertIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, RepeatIcon, ScanFaceIcon, ScissorsIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -7,7 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/colla
 import { Spinner } from "../ui/spinner";
 import { cn } from "../lib/utils";
 import { actionMeta } from "./actions";
-import { ActionTile, AgentAvatar, Seal, Token } from "./primitives";
+import { ActionTile, AgentAvatar, Seal, Token, agentName } from "./primitives";
 
 export type ApprovalState = "pending" | "approving" | "approved" | "denied" | "expired";
 
@@ -22,11 +22,13 @@ export interface ApprovalCardProps {
   why?: string;
   cuts?: Beyond[];
   state: ApprovalState;
-  /** "ready": approve with Face ID; "setup": offer to set it up first; "unsupported": plain approve. */
+  /** "ready": allow with Face ID; "setup": offer to set it up first; "unsupported": a plain tap. */
   passkey: "ready" | "setup" | "unsupported";
   approvedVia?: string;
   onApprove: () => void;
   onApprovePlain?: () => void;
+  /** "Always allow…": turn this request into a rule. */
+  onAlwaysAllow?: () => void;
   onDeny: () => void;
   className?: string;
 }
@@ -79,8 +81,8 @@ function Cuts({ cuts }: { cuts: Beyond[] }) {
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-xl bg-muted/60">
       <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
-        <ShieldAlertIcon className="size-4 text-ask" />
-        <span className="flex-1">okayed narrowed {cuts.length === 1 ? "one thing" : `${cuts.length} things`} the draft asked for</span>
+        <ScissorsIcon className="size-4 text-ask" />
+        <span className="flex-1">Left out of this request <span className="text-muted-foreground">· {cuts.length}</span></span>
         <ChevronRightIcon className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-90")} />
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-1.5 px-3 pb-3 text-sm">
@@ -100,17 +102,16 @@ function Cuts({ cuts }: { cuts: Beyond[] }) {
 }
 
 /**
- * The approval card: who wants to do exactly what, within which scope, and one decision. Approving with Face ID
- * signs a passkey assertion over this exact request; the grant records it.
+ * The approval card: who wants to do exactly what, within which scope, and one decision. Allowing with Face ID
+ * signs a passkey assertion over this exact request, and the permission carries it.
  */
 export function ApprovalCard(p: ApprovalCardProps) {
-  const meta = actionMeta(p.act);
   const done = p.state === "approved" || p.state === "denied" || p.state === "expired";
   return (
     <div className={cn("relative w-full max-w-md animate-rise overflow-hidden rounded-2xl border bg-card shadow-sm", done && "shadow-none", p.className)}>
       <div className="flex items-center gap-2 px-4 pt-4 text-muted-foreground text-sm">
         <AgentAvatar agent={p.agent} className="size-6 text-xs" />
-        <span><span className="font-medium text-foreground">{p.agent.replace(/^agent:/, "")}</span> wants to</span>
+        <span><span className="font-medium text-foreground">{agentName(p.agent)}</span> wants to</span>
         <Badge variant="secondary" className={cn("ml-auto rounded-full", (p.risk === "high" || p.risk === "critical") && "bg-deny/12 text-deny")}>{RISK[p.risk]}</Badge>
       </div>
       <div className="flex items-start gap-3 px-4 pt-3">
@@ -128,22 +129,27 @@ export function ApprovalCard(p: ApprovalCardProps) {
         {p.state === "pending" || p.state === "approving" ? (
           <div className="space-y-2">
             <Button size="lg" className="h-12 w-full gap-2 rounded-xl text-[15px]" disabled={p.state === "approving"} onClick={p.onApprove}>
-              {p.state === "approving" ? <Spinner /> : <ScanFaceIcon className="size-5" />}
-              {p.passkey === "ready" ? "Approve with Face ID" : p.passkey === "setup" ? "Set up Face ID and approve" : `Okay, ${meta.verb} it`}
+              {p.state === "approving" ? <Spinner /> : p.passkey === "unsupported" ? <CheckIcon className="size-5" /> : <ScanFaceIcon className="size-5" />}
+              {p.passkey === "setup" ? "Set up Face ID and allow" : p.uses === 1 ? "Allow once" : "Allow"}
             </Button>
-            <div className="flex items-center justify-between">
-              <Button variant="ghost" className="text-muted-foreground" disabled={p.state === "approving"} onClick={p.onDeny}>Don't allow</Button>
-              {p.onApprovePlain && p.passkey !== "unsupported" && (
-                <Button variant="link" size="sm" className="text-muted-foreground" disabled={p.state === "approving"} onClick={p.onApprovePlain}>Approve without Face ID</Button>
+            <div className="grid grid-cols-2 gap-2">
+              {p.onAlwaysAllow ? (
+                <Button variant="outline" className="rounded-xl" disabled={p.state === "approving"} onClick={p.onAlwaysAllow}><RepeatIcon />Always allow…</Button>
+              ) : (
+                <span />
               )}
+              <Button variant="ghost" className="rounded-xl text-muted-foreground" disabled={p.state === "approving"} onClick={p.onDeny}>Don't allow</Button>
             </div>
+            {p.onApprovePlain && p.passkey !== "unsupported" && (
+              <Button variant="link" size="sm" className="w-full text-muted-foreground" disabled={p.state === "approving"} onClick={p.onApprovePlain}>Allow without Face ID</Button>
+            )}
           </div>
         ) : p.state === "approved" ? (
           <div className="flex items-center gap-3">
             <Seal className="size-12 [&_svg]:size-10" />
             <div className="text-sm">
               <div className="font-semibold">Okayed</div>
-              <div className="text-muted-foreground">{p.approvedVia ?? "with Face ID"} · a once-only grant was signed</div>
+              <div className="text-muted-foreground">{p.approvedVia ?? "With Face ID"} · {p.uses === 1 ? "a one-time permission" : `a permission for ${p.uses} uses`}, signed</div>
             </div>
           </div>
         ) : (

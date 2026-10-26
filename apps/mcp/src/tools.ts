@@ -47,7 +47,7 @@ export function registerTools(server: McpServer, client: Client): void {
     {
       title: "Ask before acting",
       description:
-        "Ask the person (or their standing policies) for permission to do one exact thing. Call this before any merge, deploy, comment or spend. Returns at once if a standing policy allows it; otherwise waits up to wait_seconds for the person.",
+        "Ask the person (or their rules) for permission to do one exact thing. Call this before any merge, deploy, comment or spend. Returns at once if one of their rules allows it; otherwise waits up to wait_seconds for the person.",
       inputSchema: {
         action: z.string().describe("e.g. github.pr.merge"),
         resources: z.array(z.string()).min(1).max(10).describe("exact resources, see okayed_actions"),

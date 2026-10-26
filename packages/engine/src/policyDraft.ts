@@ -2,7 +2,7 @@ import { policyClauses, type PolicyClause } from "./anchors.ts";
 import { CATALOG } from "./catalog.ts";
 import { shortDuration } from "./format.ts";
 import { lint, type LintWarning } from "./policy.ts";
-import { matchAct } from "./resource.ts";
+import { matchAct, parseRes } from "./resource.ts";
 import type { Beyond, Condition, Effect, Layer, Policy, Rule, Targets, Unix } from "./types.ts";
 
 export interface PolicyDraftInput {
@@ -78,7 +78,7 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
   const drafts = (Array.isArray(raw) ? raw : []).filter((r): r is Record<string, unknown> => !!r && typeof r === "object");
 
   if (!clauses.some((c) => c.effect)) {
-    return { kind: "question", question: "Should the agent be allowed, asked about, or refused? Try “auto-approve …”, “ask me before …” or “never …”.", options: [], beyond };
+    return { kind: "question", question: "Should this be allowed, ask you, or be blocked? Try “always allow …”, “ask me before …” or “never …”.", options: [], beyond };
   }
 
   const rules: Rule[] = [];
@@ -180,4 +180,22 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
   if (!layer) return { kind: "question", question: `There is no layer called ${input.layer}.`, options: input.policy.layers.map((l) => l.name), beyond };
   const policy: Policy = { layers };
   return { kind: "policy", rules, layer, policy, beyond, notes, warnings: lint(policy, now).filter((w) => rules.some((r) => r.id === w.rule)) };
+}
+
+/**
+ * "Always allow…": the narrowest standing rule that covers a request like this one again. A pull request becomes its
+ * repository, a deploy keeps its site and environment, a purchase keeps its exact amount; the agent and any
+ * conditions carry over. The person widens it in the editor if they mean more.
+ */
+export function ruleFromRequest(r: { act: string; res: string[]; aud?: string; when?: Condition[] }, id: string): Rule {
+  const first = r.res[0] ? parseRes(r.res[0]) : null;
+  const res =
+    first?.kind === "github.pr" || first?.kind === "github.repo" ? `github:${first.owner}/${first.repo}/**`
+    : first?.kind === "site" ? `site:${first.host}/${first.env}`
+    : r.res[0];
+  const rule: Rule = { id, effect: "allow", act: r.act };
+  if (res) rule.res = res;
+  if (r.aud) rule.agent = r.aud;
+  if (r.when?.length) rule.when = r.when;
+  return rule;
 }

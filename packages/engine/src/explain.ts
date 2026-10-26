@@ -87,16 +87,16 @@ export function patternLabel(p: string): string {
 
 /** A rule's parts, for UIs that show each as a pill. */
 export interface RuleParts {
-  effect: "Auto-approve" | "Ask before" | "Never allow";
+  effect: "Allow" | "Ask before" | "Block";
   what: string;
   agent?: string;
   where?: string;
   only?: string;
-  /** "3 of 5 left", "24 of 40 risk left". */
+  /** "3 of 5 left", "24 of 40 points left". */
   budget?: string;
   /** "for 2 weeks", "from Nov 3", "ended". */
   horizon?: string;
-  /** Per-grant caps: "each grant up to 30 minutes". */
+  /** Per-permission caps: "each time up to 30 minutes". */
   each?: string;
 }
 
@@ -106,7 +106,7 @@ function day(t: Unix): string {
 
 export function ruleParts(r: Rule, now: Unix, usage?: Usage): RuleParts {
   const parts: RuleParts = {
-    effect: r.effect === "allow" ? "Auto-approve" : r.effect === "ask" ? "Ask before" : "Never allow",
+    effect: r.effect === "allow" ? "Allow" : r.effect === "ask" ? "Ask before" : "Block",
     what: r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act,
   };
   if (r.agent) parts.agent = r.agent.replace(/^agent:/, "");
@@ -117,18 +117,18 @@ export function ruleParts(r: Rule, now: Unix, usage?: Usage): RuleParts {
     const spent = usage?.[r.id] ?? { uses: 0, risk: 0 };
     const bits: string[] = [];
     if (r.budget.uses !== undefined) bits.push(`${Math.max(0, r.budget.uses - spent.uses)} of ${r.budget.uses} left`);
-    if (r.budget.risk !== undefined) bits.push(`${Math.max(0, r.budget.risk - spent.risk)} of ${r.budget.risk} risk left`);
+    if (r.budget.risk !== undefined) bits.push(`${Math.max(0, r.budget.risk - spent.risk)} of ${r.budget.risk} points left`);
     parts.budget = bits.join(", ");
   }
   if (r.until !== undefined && r.until <= now) parts.horizon = "ended";
   else if (r.from !== undefined && r.from > now) parts.horizon = `from ${day(r.from)}${r.until ? ` to ${day(r.until)}` : ""}`;
   else if (r.until !== undefined) parts.horizon = `for ${longDuration(r.until - now)}`;
   const each = [r.maxTtl !== undefined ? `up to ${longDuration(r.maxTtl)}` : "", r.maxUses !== undefined ? `${r.maxUses === 1 ? "once" : `${r.maxUses} uses`}` : ""].filter(Boolean);
-  if (each.length) parts.each = `each grant ${each.join(", ")}`;
+  if (each.length) parts.each = `each time ${each.join(", ")}`;
   return parts;
 }
 
-/** "Auto-approve merging pull requests for assistant in adrianmross/okayed, only if checks pass, 3 of 5 left, for 2 weeks". */
+/** "Allow merging pull requests for assistant in adrianmross/okayed, only if checks pass, 3 of 5 left, for 2 weeks". */
 export function describeRule(r: Rule, now: Unix, usage?: Usage): string {
   const p = ruleParts(r, now, usage);
   let s = `${p.effect} ${p.what}`;
@@ -140,14 +140,14 @@ export function describeRule(r: Rule, now: Unix, usage?: Usage): string {
   return s;
 }
 
-/** A shared budget the way people read it: "everything assistant does: 32 of 50 risk left, for 6 days". */
+/** A shared limit the way people read it: "everything by assistant: 32 of 50 points left, for 6 days". */
 export function describeBudget(b: SharedBudget, now: Unix, usage?: Usage): { scope: string; left: string; horizon?: string; counts: string } {
   const s = b.scope ?? {};
   const what = s.act ? (s.act.endsWith("*") ? `anything under ${s.act.replace(/\.?\*$/, "")}` : CATALOG[s.act]?.noun ?? s.act) : "everything";
   const scope = [what, s.agent ? `by ${s.agent.replace(/^agent:/, "")}` : "", s.res ? `in ${patternLabel(s.res)}` : ""].filter(Boolean).join(" ");
   const spent = usage?.[`budget:${b.id}`] ?? { uses: 0, risk: 0 };
-  const left = [b.uses !== undefined ? `${Math.max(0, b.uses - spent.uses)} of ${b.uses} left` : "", b.risk !== undefined ? `${Math.max(0, b.risk - spent.risk)} of ${b.risk} risk left` : ""].filter(Boolean).join(", ");
-  const out: { scope: string; left: string; horizon?: string; counts: string } = { scope, left, counts: b.counts === "all" ? "counts your okays too" : "counts auto-approvals" };
+  const left = [b.uses !== undefined ? `${Math.max(0, b.uses - spent.uses)} of ${b.uses} left` : "", b.risk !== undefined ? `${Math.max(0, b.risk - spent.risk)} of ${b.risk} points left` : ""].filter(Boolean).join(", ");
+  const out: { scope: string; left: string; horizon?: string; counts: string } = { scope, left, counts: b.counts === "all" ? "counts what you allow too" : "counts what rules allow" };
   if (b.until !== undefined) out.horizon = b.until > now ? `for ${longDuration(b.until - now)}` : "ended";
   return out;
 }

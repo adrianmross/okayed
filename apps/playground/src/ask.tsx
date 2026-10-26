@@ -1,4 +1,4 @@
-import { ActionTile, AgentAvatar, Choice, NewPolicyTile, PolicyEditor, PolicyTile, blankRule, tileTitle, PHRASE } from "@okayed/design/okayed";
+import { ActionTile, AgentAvatar, Choice, NewRuleTile, RuleEditor, RuleTile, agentName, blankRule, tileTitle, PHRASE } from "@okayed/design/okayed";
 import { Button } from "@okayed/design/ui/button";
 import { CATALOG, DEFAULT_POSTURE, decideAll, labelRes, personalLayer, ruleParts, type Policy, type Rule, type SharedBudget, type Usage } from "@okayed/engine";
 import { useState } from "react";
@@ -6,6 +6,7 @@ import { NOW, QUESTION_TARGETS, TARGETS } from "./data";
 
 const WORD = { allow: "Yes", ask: "Asks you first", deny: "No" } as const;
 const WORD_CLS = { allow: "text-allow", ask: "text-[color-mix(in_oklch,var(--ask)_75%,var(--foreground))]", deny: "text-deny" } as const;
+const AGENTS = ["agent:assistant", "agent:ci-bot"];
 const WHEN: [string, number][] = [["now", 0], ["in an hour", 3600], ["tomorrow", 86400], ["in two weeks", 14 * 86400]];
 
 const PRESETS: [string, Rule[]][] = [
@@ -16,10 +17,10 @@ const PRESETS: [string, Rule[]][] = [
 
 const BUDGETS: [string, SharedBudget][] = [
   ["Merges: 3 a day", { id: "merges", scope: { act: "github.pr.merge" }, uses: 3, until: NOW + 86400, note: "merges today" }],
-  ["Everything: 40 risk", { id: "all", risk: 40, note: "everything" }],
+  ["Everything: 40 points", { id: "all", risk: 40, note: "everything" }],
 ];
 
-/** Ask a policy a question, change the policy like a Shortcut, and watch the answer move. Nothing leaves the page. */
+/** Ask your rules a question, change them like a Shortcut, and watch the answer move. Nothing leaves the page. */
 export function AskView() {
   const [rules, setRules] = useState<Rule[]>(DEFAULT_POSTURE);
   const [budgets, setBudgets] = useState<SharedBudget[]>([]);
@@ -43,7 +44,7 @@ export function AskView() {
       <section className="space-y-4 rounded-3xl border bg-card p-5 shadow-sm md:p-7">
         <p className="text-[22px] leading-[2.2] md:text-[26px]">
           Can{" "}
-          <Choice label="Agent" value={q.agent} options={[["assistant", "agent:assistant"], ["buzz", "agent:buzz"]]} onPick={(agent) => setQ({ ...q, agent })} />{" "}
+          <Choice label="Agent" value={q.agent} options={AGENTS.map((a): [string, string] => [agentName(a), a])} onPick={(agent) => setQ({ ...q, agent })} />{" "}
           <Choice label="Action" value={q.act} tone="merge" options={Object.keys(CATALOG).map((a): [string, string] => [PHRASE[a] ?? a, a])} onPick={(act) => setQ({ ...q, act })} />{" "}
           <Choice label="Target" value={q.res} options={QUESTION_TARGETS.map((r): [string, string] => [labelRes(r), r])} onPick={(res) => setQ({ ...q, res })} />{" "}
           <Choice label="When" value={q.later} options={WHEN} onPick={(later) => setQ({ ...q, later })} />?
@@ -53,7 +54,7 @@ export function AskView() {
             <div className={`font-semibold text-4xl ${WORD_CLS[d.verdict]}`}>{WORD[d.verdict]}</div>
             <p className="mt-1 text-muted-foreground">{d.reason}</p>
             {d.decidedBy?.startsWith("budget:") ? (
-              <p className="mt-1 text-muted-foreground text-sm">The policy allows it, but a shared budget it draws on has run out.</p>
+              <p className="mt-1 text-muted-foreground text-sm">A rule allows it, but a limit it counts against is used up.</p>
             ) : (
               decidedBy && <p className="mt-1 text-muted-foreground text-sm">Decided by “{decidedBy.note ?? tileTitle(decidedBy).title}”.</p>
             )}
@@ -67,7 +68,7 @@ export function AskView() {
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-lg">Policies</h2>
+            <h2 className="font-semibold text-lg">Rules</h2>
             <p className="text-muted-foreground text-sm">Tap one to change it. Start from a preset:</p>
           </div>
           <div className="flex gap-1.5">
@@ -81,7 +82,7 @@ export function AskView() {
             const p = ruleParts(r, now, usage);
             const t = tileTitle(r);
             return (
-              <PolicyTile
+              <RuleTile
                 key={r.id}
                 act={r.act}
                 effect={r.effect}
@@ -92,34 +93,34 @@ export function AskView() {
               />
             );
           })}
-          <NewPolicyTile onClick={() => setEditing({ rule: blankRule(), isNew: true })} />
+          <NewRuleTile onClick={() => setEditing({ rule: blankRule(), isNew: true })} />
         </div>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-lg">Shared budgets</h2>
+        <h2 className="font-semibold text-lg">Limits</h2>
         <div className="flex flex-wrap items-center gap-2">
           {budgets.map((b) => (
             <span key={b.id} className="inline-flex items-center gap-2 rounded-full border bg-card py-1 pr-1 pl-2 text-sm">
               <ActionTile act={b.scope?.act} size="sm" className="size-5 [&_svg]:size-3" />
-              {b.note} · {b.uses !== undefined ? `${Math.max(0, b.uses - (usage[`budget:${b.id}`]?.uses ?? 0))} of ${b.uses} left` : `${Math.max(0, (b.risk ?? 0) - (usage[`budget:${b.id}`]?.risk ?? 0))} of ${b.risk} risk left`}
+              {b.note} · {b.uses !== undefined ? `${Math.max(0, b.uses - (usage[`budget:${b.id}`]?.uses ?? 0))} of ${b.uses} left` : `${Math.max(0, (b.risk ?? 0) - (usage[`budget:${b.id}`]?.risk ?? 0))} of ${b.risk} points left`}
               <Button size="xs" variant="ghost" onClick={() => setBudgets(budgets.filter((x) => x !== b))}>Remove</Button>
             </span>
           ))}
           {BUDGETS.filter(([, b]) => !budgets.some((x) => x.id === b.id)).map(([label, b]) => (
             <Button key={label} size="sm" variant="outline" onClick={() => setBudgets([...budgets, b])}>+ {label}</Button>
           ))}
-          {Object.keys(usage).length > 0 && <Button size="sm" variant="ghost" onClick={() => setUsage({})}>Reset what's been spent</Button>}
+          {Object.keys(usage).length > 0 && <Button size="sm" variant="ghost" onClick={() => setUsage({})}>Reset limits</Button>}
         </div>
       </section>
 
       {editing && (
-        <PolicyEditor
+        <RuleEditor
           key={editing.rule.id}
           rule={editing.rule}
           isNew={editing.isNew}
           rules={rules}
-          world={{ agents: ["agent:assistant", "agent:buzz"], repos: TARGETS.repos, sites: TARGETS.sites.map((s) => ({ ...s, envs: [...new Set([...s.envs, "staging", "preview"])] })), budgets, usage, now }}
+          world={{ agents: AGENTS, repos: TARGETS.repos, sites: TARGETS.sites.map((s) => ({ ...s, envs: [...new Set([...s.envs, "staging", "preview"])] })), budgets, usage, now }}
           onSave={async (next) => (setRules(next), true)}
           onClose={() => setEditing(null)}
         />

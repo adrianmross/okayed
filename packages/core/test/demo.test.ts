@@ -50,7 +50,7 @@ describe("the demo assistant", () => {
     const { svc, backend } = setup();
     await svc.claim();
     const out = await turn(backend, [{ role: "user", content: "merge PR #182 in okayed" }]);
-    expect(out.text).toMatch(/^Done: Merged PR #182 into adrianmross\/okayed at [0-9a-f]{7}\. This was simulated, approved by your policy \(posture:merge\)/);
+    expect(out.text).toMatch(/^Done: Merged PR #182 into adrianmross\/okayed at [0-9a-f]{7}\. This was simulated, allowed by your rules \(posture:merge\)/);
     const snap = await svc.snapshot();
     expect(snap.grants[0]).toMatchObject({ status: "used", used: 1 });
     expect(snap.requests[0]!.ref).toMatch(/^call_/);
@@ -97,7 +97,7 @@ describe("the demo assistant", () => {
     const { svc, backend } = setup();
     await svc.claim();
     const out = await turn(backend, [{ role: "user", content: "let assistant merge anything in okayed for 2 weeks, up to 30 merges" }]);
-    expect(out.text).toMatch(/^Here's the policy I'd set/);
+    expect(out.text).toMatch(/^Here's the rule I'd add/);
     expect((await svc.snapshot()).cards.find((c) => c.kind === "policy")?.status).toBe("open");
   });
 });

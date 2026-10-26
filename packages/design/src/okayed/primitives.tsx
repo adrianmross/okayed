@@ -18,6 +18,12 @@ export function ActionTile({ act, tone, icon, size = "md", className }: { act?: 
 
 const AGENT_HUES = [266, 200, 150, 30, 330, 90];
 
+/** An agent id as people read it: `agent:assistant` → "Assistant". */
+export function agentName(agent: string): string {
+  const name = agent.replace(/^agent:/, "");
+  return name.slice(0, 1).toUpperCase() + name.slice(1);
+}
+
 /** An agent's round badge: its initial on a hue derived from its name. */
 export function AgentAvatar({ agent, className }: { agent: string; className?: string }) {
   const name = agent.replace(/^agent:/, "");
@@ -81,7 +87,8 @@ export function Seal({ className, label = "Okayed" }: { className?: string; labe
   );
 }
 
-const VERDICT = { allow: { label: "Goes ahead", cls: "bg-allow/14 text-allow" }, ask: { label: "Asks you", cls: "bg-ask/18 text-[color-mix(in_oklch,var(--ask)_70%,var(--foreground))]" }, deny: { label: "Never", cls: "bg-deny/12 text-deny" } } as const;
+/** The three decisions, worded the same everywhere: a rule allows, asks you, or blocks. */
+export const VERDICT = { allow: { label: "Allowed", cls: "bg-allow/14 text-allow" }, ask: { label: "Asks you", cls: "bg-ask/18 text-[color-mix(in_oklch,var(--ask)_70%,var(--foreground))]" }, deny: { label: "Blocked", cls: "bg-deny/12 text-deny" } } as const;
 
 export function VerdictPill({ verdict, children, className }: { verdict: keyof typeof VERDICT; children?: ReactNode; className?: string }) {
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-xs", VERDICT[verdict].cls, className)}>{children ?? VERDICT[verdict].label}</span>;
