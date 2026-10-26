@@ -21,6 +21,13 @@ await cdp.send("WebAuthn.addVirtualAuthenticator", {
   options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
 });
 
+/** Sends a chat message once the assistant has finished its last reply (the composer ignores Enter while busy). */
+async function say(text) {
+  await page.waitForSelector('button[aria-label="Send"]', { timeout: 30000 });
+  await page.fill("textarea", text);
+  await page.keyboard.press("Enter");
+}
+
 try {
   await page.goto(WEB);
   await page.evaluate(() => localStorage.clear());
@@ -33,8 +40,7 @@ try {
   await page.waitForSelector("text=/allowed by your rules/", { timeout: 20000 });
   check(await page.isVisible("text=by your rules"), "a checked merge is allowed by the default rules, with a receipt");
 
-  await page.fill("textarea", "Deploy openmeadow to production");
-  await page.keyboard.press("Enter");
+  await say("Deploy openmeadow to production");
   const faceId = page.getByRole("button", { name: /^(Allow once|Set up Face ID and allow)$/ }).first();
   await faceId.waitFor({ timeout: 20000 });
   check(await page.isVisible("text=High risk"), "a production deploy asks, with a high-risk approval card");
@@ -42,15 +48,13 @@ try {
   await page.waitForSelector("text=/Deployed openmeadow.org to production/", { timeout: 30000 });
   check(await page.isVisible("text=with Face ID"), "Face ID (a passkey bound to the request) allows it, and the assistant carries on");
 
-  await page.fill("textarea", "Buy openmeadow.dev for $12");
-  await page.keyboard.press("Enter");
+  await say("Buy openmeadow.dev for $12");
   await page.locator("text=Don't allow").first().waitFor({ timeout: 20000 });
   await page.locator("text=Don't allow").first().click();
   await page.waitForSelector("text=/Okay, I won't/", { timeout: 20000 });
   check(true, "saying no stops the purchase, and the assistant says so");
 
-  await page.fill("textarea", "Deploy openmeadow to production");
-  await page.keyboard.press("Enter");
+  await say("Deploy openmeadow to production");
   await page.getByRole("button", { name: "Always allow…" }).last().click();
   await page.getByRole("button", { name: "Add rule and allow" }).click();
   await page.waitForSelector("text=Rule added.", { timeout: 10000 });
@@ -74,6 +78,7 @@ try {
   check(true, "a rule can be changed in the Shortcuts-style editor");
 } catch (e) {
   check(false, `the flow ran to the end (${e.message.split("\n")[0]})`);
+  if (process.env.E2E_SHOT) await page.screenshot({ path: process.env.E2E_SHOT, fullPage: true });
 }
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors[0]}` : ""}`);
 await browser.close();
