@@ -5,3 +5,8 @@ ISSUER_SECRET=
 GITHUB_TOKEN=
 # Use "heuristic" to run without Workers AI (no Cloudflare login needed).
 DRAFTER=heuristic
+# Or draft with any OpenAI-compatible endpoint (OpenAI, OpenRouter, a local model). Off unless you set these.
+# DRAFTER=openai-compatible
+# DRAFT_BASE_URL=https://api.openai.com/v1
+# DRAFT_API_KEY=
+# MODEL=gpt-5-mini

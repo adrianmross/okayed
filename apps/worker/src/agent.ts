@@ -7,6 +7,7 @@ import {
   KeySigner,
   OkayedError,
   OkayedService,
+  OpenAICompatibleDrafter,
   SystemClock,
   cryptoRandom,
   mergeWithGrant,
@@ -46,10 +47,14 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     if (this._svc) return this._svc;
     if (!/^[0-9a-f]{64}$/.test(this.env.ISSUER_SECRET ?? "")) throw new OkayedError(500, "ISSUER_SECRET must be 64 hex characters");
     const heuristic = new HeuristicDrafter();
-    const drafter: Drafter =
-      this.env.DRAFTER === "heuristic" || !this.env.AI
-        ? heuristic
-        : new FallbackDrafter(new WorkersAIDrafter(this.env.AI, this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"), heuristic);
+    // Workers AI by default; any OpenAI-compatible endpoint when configured; the heuristic offline or as the fallback.
+    const model =
+      this.env.DRAFTER === "openai-compatible" && this.env.DRAFT_BASE_URL && this.env.MODEL
+        ? new OpenAICompatibleDrafter({ baseUrl: this.env.DRAFT_BASE_URL, model: this.env.MODEL, ...(this.env.DRAFT_API_KEY ? { apiKey: this.env.DRAFT_API_KEY } : {}) })
+        : this.env.DRAFTER !== "heuristic" && this.env.AI
+          ? new WorkersAIDrafter(this.env.AI, this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+          : null;
+    const drafter: Drafter = model ? new FallbackDrafter(model, heuristic) : heuristic;
     const lifecycle: Lifecycle = {
       start: async (id: string, params: FlowParams) => {
         await this.runWorkflow("GRANT_LIFECYCLE", params, { id });

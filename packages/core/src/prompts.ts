@@ -1,5 +1,5 @@
 import { CATALOG } from "@okayed/engine";
-import type { DraftContext } from "./ports.ts";
+import type { Draft, DraftContext } from "./ports.ts";
 
 /**
  * Provider-neutral prompts. Any chat model that can return JSON can draft with these; the engine treats the
@@ -82,3 +82,17 @@ export const DRAFT_SCHEMA = {
 } as const;
 
 export const EXPLAIN_SYSTEM = `You explain okayed approvals to a busy person in one or two short, plain sentences. Use only the facts given. Do not add permissions, reassure, or speculate. Mention risk if it is high or critical. No preamble.`;
+
+/**
+ * A model's reply as a draft: JSON (bare, or in a ```json fence) in DRAFT_SCHEMA's shape. Anything unusable throws,
+ * so a FallbackDrafter can step in.
+ */
+export function parseDraft(reply: unknown): Draft {
+  const body = typeof reply === "string" ? JSON.parse(reply.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")) : reply;
+  if (!body || typeof body !== "object") throw new Error("no draft");
+  const d = body as { intent?: string; grant?: unknown; policy?: unknown; reply?: unknown };
+  const text = typeof d.reply === "string" ? d.reply : undefined;
+  if (d.intent === "policy") return { intent: "policy", policy: (d.policy ?? { rules: [] }) as never, ...(text ? { reply: text } : {}) };
+  if (d.intent === "other") return { intent: "other", reply: text ?? "I can approve things or set rules. What should I do?" };
+  return { intent: "grant", grant: (d.grant ?? {}) as never, ...(text ? { reply: text } : {}) };
+}

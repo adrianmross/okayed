@@ -12,8 +12,12 @@ export interface Env {
   GRANT_LIFECYCLE: Workflow;
   ISSUER_SECRET: string;
   GITHUB_TOKEN?: string;
+  /** "workers-ai" (default), "openai-compatible" or "heuristic". */
   DRAFTER?: string;
   MODEL?: string;
+  /** For DRAFTER=openai-compatible: the endpoint up to /v1, and its key (a secret). */
+  DRAFT_BASE_URL?: string;
+  DRAFT_API_KEY?: string;
 }
 
 declare global {
@@ -25,6 +29,8 @@ declare global {
       GITHUB_TOKEN?: string;
       DRAFTER?: string;
       MODEL?: string;
+      DRAFT_BASE_URL?: string;
+      DRAFT_API_KEY?: string;
       WEB_ORIGINS?: string;
       DEMO?: string;
     }
