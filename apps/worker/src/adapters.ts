@@ -1,4 +1,4 @@
-import { DRAFT_SCHEMA, DRAFT_SYSTEM, EXPLAIN_SYSTEM, draftUser, type Draft, type DraftContext, type Drafter, type Store } from "@okayed/core";
+import { DRAFT_SCHEMA, DRAFT_SYSTEM, EXPLAIN_SYSTEM, draftUser, parseDraft, type Draft, type DraftContext, type Drafter, type Store } from "@okayed/core";
 
 /** `Store` on Durable Object storage. The DO is the single writer for its user; transactions are atomic. */
 export class DurableStore implements Store {
@@ -30,7 +30,7 @@ export class DurableStore implements Store {
   }
 }
 
-/** Llama 3.3 on Workers AI, in JSON mode. Its output is a draft for the engine, never a decision. */
+/** A Workers AI model (Llama 3.3 by default), in JSON mode. Its output is a draft for the engine, never a decision. */
 export class WorkersAIDrafter implements Drafter {
   readonly name: string;
   constructor(
@@ -50,13 +50,7 @@ export class WorkersAIDrafter implements Drafter {
       max_tokens: 400,
       temperature: 0,
     } as never)) as { response?: unknown };
-    const body = typeof out.response === "string" ? JSON.parse(out.response) : out.response;
-    if (!body || typeof body !== "object") throw new Error("no draft");
-    const d = body as { intent?: string; grant?: unknown; policy?: unknown; reply?: unknown };
-    const reply = typeof d.reply === "string" ? d.reply : undefined;
-    if (d.intent === "policy") return { intent: "policy", policy: (d.policy ?? { rules: [] }) as never, ...(reply ? { reply } : {}) };
-    if (d.intent === "other") return { intent: "other", reply: reply ?? "I can approve things or set rules. What should I do?" };
-    return { intent: "grant", grant: (d.grant ?? {}) as never, ...(reply ? { reply } : {}) };
+    return parseDraft(out.response);
   }
 
   async explain(facts: string): Promise<string | null> {
