@@ -7,7 +7,7 @@ import { jcs } from "./jcs.ts";
 import { KIND } from "./kinds.ts";
 import { signEvent, tag, verifyEvent, type EventTemplate, type NostrEvent } from "./nostr.ts";
 
-export type AssuranceMethod = "policy" | "web-click" | "webauthn" | "approver" | "approver";
+export type AssuranceMethod = "policy" | "web-click" | "webauthn" | "approver";
 
 export interface Assurance {
   method: AssuranceMethod;
