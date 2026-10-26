@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ../../packages/design/scripts/build-registry.mjs public/r ${VITE_WEB_URL:-https://okayed.pages.dev}/r && vite build",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
