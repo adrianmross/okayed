@@ -8,11 +8,13 @@ and the playground) are built only from it. It has four layers:
 | Tokens | `src/styles/okayed.css` | Colour, type, radius and motion as CSS variables with shadcn's names, light and dark, plus Tailwind v4 `@theme`. |
 | shadcn/ui | `src/ui/*` | The latest new-york-v4 components, copied from shadcn's repository as shadcn intends, with `cn` from the `cn` package. |
 | AI Elements | `src/ai/*` | Conversation, message, tool call and shimmer, adapted from Vercel's AI Elements (Apache-2.0) to these tokens, without the heavy markdown and highlighting stack. |
-| okayed | `src/okayed/*` | The pieces that are okayed's own: action tiles, tokens, the seal, the approval card, receipts, policy tiles and the Shortcuts-style policy editor. |
+| okayed | `src/okayed/*` | The pieces that are okayed's own: action tiles, tokens, the seal, the approval card, receipts, rule tiles and the Shortcuts-style rule editor. |
+
+The same pieces install into any shadcn app from okayed's registry (below).
 
 ## The idea
 
-An approval should feel like pressing a seal on one specific thing. Policies should feel like building a Shortcut:
+An approval should feel like pressing a seal on one specific thing. Rules should feel like building a Shortcut:
 pick a coloured action, tap the words that matter, and read back a sentence. So:
 
 - **Quiet ground, loud decisions.** Neutrals are cool and calm. The only strong colours are the action tiles
@@ -32,9 +34,9 @@ All colours are OKLCH tokens, redefined under `.dark`. Components never use a li
 |---|---|
 | `--background`, `--card`, `--muted`, `--border` | Cool neutrals with a slight blue bias (hue 262–268). |
 | `--primary` / `--seal` | Cobalt. Approve buttons, the seal, focus rings. |
-| `--allow` | Green: goes ahead. |
+| `--allow` | Green: allowed. |
 | `--ask` | Amber: asks you. |
-| `--deny` | Red: never, refused, revoked, high risk. |
+| `--deny` | Red: blocked, refused, taken back, high risk. |
 | `--tile-<family>-from/to` | Gradient pairs for action tiles: `read` slate, `comment` sky, `merge` violet, `deploy` teal, `spend` coral, `policy` cobalt, `any` grey. |
 
 Decision colours are semantic and never decorative. Tile colours mean only "what kind of action".
@@ -70,7 +72,7 @@ A rounded square with a gradient by family and a white icon (`lucide`). Sizes `s
 | `github.pr.merge` | git merge | merge |
 | `site.deploy` | rocket | deploy |
 | `spend.money` | credit card | spend |
-| a policy | shield | policy |
+| a rule change | shield | policy |
 
 ### Token — `Token`, `Choice`
 
@@ -85,36 +87,39 @@ From top to bottom:
 2. What: a large action tile and the sentence, with targets as tokens.
 3. Why: the agent's reason, quoted.
 4. Scope chips: the commit, the use count, the time, the conditions.
-5. "okayed narrowed N things": a collapsible list of what was cut from the model's draft.
-6. One decision: a full-width **Approve with Face ID** button, a quiet **Don't allow**, and a link to approve
-   without Face ID.
+5. "Left out of this request": a collapsible list of what was cut from the model's draft.
+6. One decision: a full-width **Allow once** with the Face ID glyph; **Always allow…**, which opens the rule editor
+   with the narrowest rule that covers requests like this one; a quiet **Don't allow**; and a link to allow without
+   Face ID.
 
-Once approved, the seal presses down.
+Once allowed, the seal presses down.
 
 ### Receipt — `ReceiptCard`
 
 A ticket with a dashed tear line:
 
 - the tile, what happened, and the agent
-- how it was okayed: with Face ID, or by your policy
-- the time, uses spent, the grant id, and a live/used/expired/revoked badge
+- how it was okayed: with Face ID, or by your rules
+- the time, uses spent, the grant id, and an Active, Used, Expired or Taken back badge, with **Take back** while
+  it's active
 
 It carries the seal when you approved it yourself.
 
-### Policy tile — `PolicyTile`, `NewPolicyTile`
+### Rule tile — `RuleTile`, `NewRuleTile`
 
-A Shortcuts library tile: the family gradient, the icon, an effect pill (Goes ahead, Asks you, Never, Budget
-spent), a name and a one-line summary. The last tile in the grid is a dashed "+ New policy".
+A Shortcuts library tile: the family gradient, the icon, a decision pill (Allowed, Asks you, Blocked, Limit
+reached), a name and a one-line summary. The last tile in the grid is a dashed "+ New rule".
 
-### Policy editor — `PolicyEditor`
+### Rule editor — `RuleEditor`
 
 A sheet with a stack of `Step`s joined by short connectors, each reading as part of one sentence:
 
-> When **any agent** asks to **merge pull requests** in **adrianmross/okayed**, then **Go ahead** — only if
+> When **any agent** asks to **merge pull requests** in **adrianmross/okayed**, then **Allow** — only if
 > **checks pass** · **30 times** · **for 2 weeks**
 
 Below the steps are the plain-words rule and a live "Try it" from the same engine okayed runs. The editor takes
-props and returns rules, so the web app saves to the server and the playground keeps them in memory.
+props and returns rules, so the web app saves to the server and the playground keeps them in memory. `title` and
+`saveLabel` let it say more, as "Always allow" does with "Add rule and allow".
 
 ### Chat — `Conversation`, `Message`, `Tool`
 
@@ -122,16 +127,28 @@ AI Elements' structure:
 
 - a conversation that sticks to the bottom
 - user messages as cobalt bubbles, assistant messages as plain text
-- each tool call as a collapsible row with its action tile and a status ("Needs your okay", "Done", "Not allowed")
+- each tool call as a collapsible row with its action tile and a status ("Waiting for you", "Done", "Not allowed")
 
 The approval card and the receipt render directly under the tool call they belong to.
 
 ## Writing
 
 - Name things the way people do: "Merge PR #182 in okayed", not `github.pr.merge`. Ids appear only in transcripts and
-  signed events.
-- Buttons say what happens: "Approve with Face ID", "Don't allow", "Stop everything", "Apply with Face ID".
-- After an action, confirm in a few words ("Policy saved.", "Revoked."). Errors say what to do next ("Set up Face
+  signed records.
+- Use the app's words, and keep the IAM ones for the API and docs:
+
+  | Say | Not |
+  |---|---|
+  | request | — |
+  | Allow · Ask me · Block; Allowed · Asks you · Blocked | approve, go ahead, never, deny |
+  | rule | policy, standing policy |
+  | permission | grant |
+  | limit, points | budget, risk |
+  | Take back | revoke |
+  | Presets | posture |
+
+- Buttons say what happens: "Allow once", "Always allow…", "Don't allow", "Take back", "Stop everything", "Add rule".
+- After an action, confirm in a few words ("Rule saved.", "Taken back."). Errors say what to do next ("Set up Face
   ID first", "The approval took too long; try again").
 - Say plainly that actions are simulated, once per screen at most.
 
@@ -141,6 +158,33 @@ The approval card and the receipt render directly under the tool call they belon
 - Decision colours always come with words ("Goes ahead", "Asks you"); colour is never the only signal.
 - Both themes are designed, and the theme follows the system (`followSystemTheme`).
 - The chat is a `role="log"` region; toasts are announced.
+
+## Install from the registry
+
+The web build runs `packages/design/scripts/build-registry.mjs`, which turns the theme, the engine and each okayed
+component into a shadcn registry item at `/r/`. Imports are rewritten to shadcn's aliases (`@/components/ui`,
+`@/lib/utils`), okayed's own pieces land in `components/okayed/`, and the engine they use lands in `lib/okayed/engine/`.
+
+```bash
+npx shadcn add https://okayed.pages.dev/r/approval-card.json
+```
+
+Or add the namespace to `components.json` and install by name:
+
+```json
+{ "registries": { "@okayed": "https://okayed.pages.dev/r/{name}.json" } }
+```
+
+```bash
+npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, approval card, receipt, rule tile, rule editor
+```
+
+| Item | What |
+|---|---|
+| `okayed-theme` | The tokens, fonts, tile gradients and animations, merged into your CSS. |
+| `okayed-engine` | The policy engine, pure TypeScript. |
+| `okayed-primitives` | Action tiles, avatars, tokens, the seal, verdict pills, steps. |
+| `approval-card`, `receipt-card`, `rule-tile`, `rule-editor` | The components, each with the shadcn pieces it needs. |
 
 ## Adding a shadcn component
 

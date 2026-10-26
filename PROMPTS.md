@@ -174,3 +174,30 @@ Maybe for the demo it should be just std chat and you ask stuff that reqs perms.
 | `feat(web): …` | The demo rebuilt in React: chat with tool calls, approval cards and receipts in line; Chat, Receipts and Transcript views; a Shortcuts-style policy library and editor; Activity; Settings. |
 | `feat(playground): …` | The playground on the same design system: ask a policy, build one, and watch words narrow into a grant. |
 | `test: …`, `docs: …` | A browser end-to-end run of the demo with a virtual Face ID; `docs/design-system.md`. |
+
+## 10 — Words
+
+```text
+I want to use my user defender, which do you think rules or policy works better and then grants or approvals and anything else you think language wise that we could improve?
+```
+
+The answer proposed everyday words in the app (rules; Allow, Ask me, Block; permissions; limits; Take back) and the
+IAM terms in the API, the grant format and the docs.
+
+## 11 — Build it, approvers, a registry, other models
+
+Two project names in this prompt are redacted; they belong to unreleased work.
+
+```text
+You should build it though with local assurance with webauthn now but eventual external Authenticator like [redacted] later down the road with the idea of the approval getting pushed to there. Maybe we need our own shadcn repo since that’s recently supported. It would be interesting looking at different models for some of the interpretation stuff, maybe something like Jeff or OpenAI decision api is better.
+```
+
+### What came out of prompts 10–11
+
+| Commit | What |
+|---|---|
+| `feat(ui): say rules and permissions, and add "Always allow…"` | The new words across the app, the design system, the playground and the engine's sentences. "Always allow…" turns a request into the narrowest rule that covers it. Activity became Waiting, Permissions and History. |
+| `feat(core): push approvals to approver apps on other devices` | An approver port: a passkey locally, or a paired app that reads a signed inbox and answers with a signed kind-4845 event. |
+| `feat(design): publish the design system as a shadcn registry` | The theme, the engine and the components as shadcn registry items, served at `/r/` and checked by installing them into a fresh app with the shadcn CLI. |
+| `feat(core): compare interpreters …`, `fix(engine): …` | Twenty eval cases scored by what the engine does with each draft; any OpenAI-compatible model can draft. The evals found that "never deploy to production" blocked every deploy. |
+| `refactor: …`, `docs: …` | The demo agent is now just "the assistant", the demo uses public repos, and the docs describe ideas instead of unreleased specs. |

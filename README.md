@@ -10,31 +10,44 @@ grant before it acts.
 
 - **Web demo:** _deployed link goes here_ · **Playground:** _deployed link goes here_
 - Runs on Cloudflare: Workers AI (Llama 3.3), Agents SDK (a Durable Object per user, `AIChatAgent` for the chat),
-  Workflows, and Pages. The core is provider-agnostic.
+  Workflows, and Pages. The core is provider-agnostic, and the components install into any shadcn app.
 - MIT licensed. The full prompt history behind this AI-assisted build is in [`PROMPTS.md`](PROMPTS.md).
 
 ## The demo
 
-Chat with **Assistant**, an assistant that can merge pull requests, deploy sites, comment and buy things. Its tools are
-simulated: nothing real happens. Every tool call still goes through okayed, and the approvals and grants are real.
+Chat with an assistant that can merge pull requests, deploy sites, comment and buy things. Its tools are simulated:
+nothing real happens. Every tool call still goes through okayed, and the permissions it signs are real.
 
-- If your policies allow the call, it goes ahead. A once-only grant is signed, and a receipt appears in the chat.
-- If they don't, an approval card appears under the tool call: the plain sentence, the exact scope, the risk, and
-  what okayed cut from the draft. **Approve with Face ID** signs a WebAuthn assertion over that exact request, and
-  the assertion travels with the grant. Assistant then carries on.
-- If a policy says never, Assistant is refused and says so.
+- If your rules allow the call, it goes ahead with a one-time permission, and a receipt appears in the chat.
+- If they ask you, an approval card appears under the tool call: the plain sentence, the exact scope, the risk, and
+  what was left out of the draft. **Allow once** signs a WebAuthn assertion (Face ID, Touch ID) over that exact
+  request, and the assertion travels with the permission. **Always allow…** opens the narrowest rule that covers
+  requests like this one, and allows this one with the same Face ID.
+- If a rule blocks it, the assistant is refused and says so.
 
-Each conversation has three views: **Chat**, **Receipts** and **Transcript** (every tool input, output, okayed
-request and grant, as data). **Policies** is a library of standing rules you build like Siri Shortcuts. **Activity**
-has what's waiting, a receipt for every grant, and the log.
+Each conversation has three views: **Chat**, **Receipts** and **Transcript** (every tool input and output, okayed
+request and grant, as data). **Rules** is a library you build like Siri Shortcuts. **Activity** has what's waiting,
+the permissions agents hold right now (take any of them back), and a history of signed receipts.
 
-| Assistant asks; you approve with Face ID | Then it carries on, with receipts |
+| The assistant asks; you allow it with Face ID | Then it carries on, with receipts |
 |---|---|
-| ![An approval card under Assistant's deploy tool call](docs/img/demo-approval.png) | ![Receipts for a merge approved by policy and a deploy approved with Face ID](docs/img/demo-chat.png) |
+| ![An approval card under the assistant's deploy tool call](docs/img/demo-approval.png) | ![Receipts for a merge your rules allowed and a deploy you allowed with Face ID](docs/img/demo-chat.png) |
 
-| Policies, built like a Shortcut | The library on a phone |
+| “Always allow…” opens the narrowest rule | Your rules, on a phone |
 |---|---|
-| ![The Shortcuts-style policy editor](docs/img/demo-policy-editor.png) | ![Policy tiles on a phone](docs/img/demo-policies-mobile.png) |
+| ![The rule editor, prefilled from a production deploy request](docs/img/demo-always-allow.png) | ![Rule tiles on a phone](docs/img/demo-rules-mobile.png) |
+
+**Words.** The app speaks in everyday words. The API, the grant format and the docs keep the IAM ones:
+
+| In the app | In the API and docs |
+|---|---|
+| a **request** ("Assistant wants to…") | request (kind 4840) |
+| **Allow** · **Ask me** · **Block** | `allow` · `ask` · `deny` |
+| a **rule** | a rule in your layer of the policy |
+| a **permission** | a grant (kind 4841) |
+| a **receipt** | a use receipt (kind 4843) |
+| a **limit**, in uses or points | a budget (`budget`, `budgets`) |
+| **Take back** · **Stop everything** | revoke (4842) · emergency stop (4844) |
 
 ## Why
 
@@ -52,7 +65,7 @@ answers three questions in miniature:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant A as Agent (e.g. Assistant)
+    participant A as Agent
     participant W as okayed Worker
     participant DO as OkayedAgent<br/>(Durable Object per user)
     participant WF as GrantLifecycle<br/>(Workflow)
@@ -102,41 +115,69 @@ cuts, and the cut is shown on the card ("asked for X, granted Y, refused Z becau
 The grant format (JSON, JCS-hashed id, signed as a Nostr event, kinds 4840–4844 and 34840) is specified in
 [`docs/grant-format.md`](docs/grant-format.md). The design notes are in [`docs/design.md`](docs/design.md).
 
-## Standing policies
+## Standing rules
 
 A one-time okay is the narrow case. Most of the time you want an agent to get on with things:
 
-> “let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges”
+> “always allow merges in okayed when checks pass for 2 weeks, up to 30 merges”
 
-That becomes a standing policy: agent `assistant`, repo `adrianmross/okayed`, condition `checks.pass`, a 14-day horizon
-and a limit of 30. Each merge under it is auto-approved as its own once-only grant, pinned to the PR's head commit,
-and the grant names the policy that allowed it.
+That becomes a rule: repo `adrianmross/okayed`, condition `checks.pass`, a 14-day horizon and a limit of 30. Each
+merge under it is allowed as its own one-time permission, pinned to the PR's head commit, and the permission names
+the rule that allowed it. **Always allow…** on an approval card builds the same kind of rule from a real request.
 
-**Budgets are optional.** Put one on a single policy ("up to 30 merges"), or add a shared budget across policies:
-global ("everything, 100 risk this week"), for one action ("merges, 10 a day") or for one agent ("assistant, 50 risk
-this week, counting my own okays too"). When a budget runs out, the next request asks you, the card says what spent
-it, and one tap tops it up.
+**Limits are optional.** Put one on a single rule ("up to 30 merges"), or add a limit shared across rules: global
+("everything, 100 points this week"), for one action ("merges, 10 a day") or for one agent ("the assistant, 50 points
+this week, counting what I allow too"). Points weigh actions by risk. When a limit runs out, the next request asks
+you, the card says what used it up, and one tap resets it.
 
-New users start with a **balanced posture** and no budgets: reads, comments, merges with passing checks, and staging
-deploys go ahead; production deploys and spending ask. These are ordinary rules you can change in the Policy tab, by
-tapping a pill, or in words. The model's draft of a policy can't widen what you said.
+New users start from the **Balanced** preset and no limits: reads, comments, merges with passing checks, and staging
+deploys are allowed; production deploys and spending ask. These are ordinary rules you can change in Rules, by
+tapping a word, or in words. The model's draft of a rule can't widen what you said.
+
+## Approvers
+
+Every approval signs the same thing: the card, a hash of its exact draft, and a nonce. Today the approver is local, a
+passkey in the browser. The approver is a port, so an approval can also go to an app on another device, such as a
+phone: pair the app's public key (`POST /approvers`), and okayed keeps what's waiting in an inbox the app reads with
+a signed request (NIP-98). The app answers with a signed approval event (kind 4845), which becomes the grant's proof
+(`assurance.method: "approver"`). A `Notifier` port can wake the app; the wake carries nothing. okayed's side is
+built and tested end to end. No app ships with it yet.
+
+## Interpreting people
+
+The model only drafts, so it never decides, but a better reader asks fewer needless questions. `packages/core`
+drafts with Workers AI (Llama 3.3 by default), or any OpenAI-compatible endpoint (`DRAFTER=openai-compatible`), and
+falls back to the model-free heuristic. Twenty eval cases, from plain okays to prompt injections, are scored by what
+the engine ends up doing with each draft:
+
+```bash
+pnpm --filter @okayed/core test interpret                     # the heuristic: 18/20 intent, 17/20 outcome
+EVAL_MODELS="cf:@cf/meta/llama-3.3-70b-instruct-fp8-fast,cf:@cf/openai/gpt-oss-120b" \
+  CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… pnpm --filter @okayed/core test interpret
+EVAL_MODELS="openai:gpt-5-mini" OPENAI_API_KEY=… pnpm --filter @okayed/core test interpret
+```
+
+Part of the work is a bounded choice (is this an okay, a rule or a question; which pending request; which site), and
+the intent column scores it on its own. Fast decision models, such as OpenAI's Decisions API, fit that part. See
+[`docs/design.md`](docs/design.md#interpreting-people).
 
 ## Repository layout
 
 ```
 packages/engine      pure decision engine: anchors, binding, narrowing, standing policies, budgets, use checks
 packages/grant       grant format v0: JCS, ids, Nostr events, BIP-340 signatures, per-user issuer keys
-packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock),
-                     the lifecycle flow, prompts, a model-free drafter, in-memory adapters, the GitHub tool
-                     passkeys (WebAuthn), and the demo's tools and scripted model
+packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock,
+                     Notifier), the lifecycle flow, prompts, drafters (OpenAI-compatible, model-free), approvers
+                     (passkeys, paired apps), in-memory adapters, the GitHub tool, the demo's tools, and evals
 packages/design      okayed's design system: tokens, the latest shadcn components, AI Elements for chat, and
-                     okayed's approval card, receipts, policy tiles and Shortcuts-style editor (docs/design-system.md)
+                     okayed's approval card, receipts, rule tiles and Shortcuts-style editor, also served as a
+                     shadcn registry (docs/design-system.md)
 packages/client      a dependency-free client for agents: ask, wait, merge
 apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedChat (AIChatAgent), the Workflow,
                      Workers AI, the HTTP API
-apps/web             Pages: the demo (Chat, Policies, Activity, Settings), React on @okayed/design
-apps/playground      Pages: ask a policy, build one, and watch words narrow into a grant; the engine in the browser
-apps/mcp             MCP server so Assistant or any MCP agent asks okayed before acting
+apps/web             Pages: the demo (Chat, Rules, Activity, Settings), React on @okayed/design, and /r/ (the registry)
+apps/playground      Pages: ask your rules, build one, and watch words narrow into a grant; the engine in the browser
+apps/mcp             MCP server so any MCP agent asks okayed before acting
 docs/                design notes, grant format, design system
 scripts/             smoke.mjs (API, end to end) and e2e-web.mjs (the demo in a browser, Face ID included)
 ```
@@ -156,7 +197,7 @@ pnpm dev:playground            # the playground on :5174
 pnpm e2e                       # the API end to end, then the demo in a browser with a virtual Face ID
 ```
 
-`dev:local` runs every part except Workers AI. Assistant is then played by a scripted model that reads intent with
+`dev:local` runs every part except Workers AI. The assistant is then played by a scripted model that reads intent with
 okayed's own anchors, and policy drafting uses the model-free `HeuristicDrafter`, so the whole demo works offline.
 To use Llama 3.3, run `wrangler login` and then `pnpm dev:worker`. The model only drafts; okayed still decides.
 
@@ -191,12 +232,12 @@ Worker verifies and consumes the grant, checks `checks.pass` when the grant requ
 the checks fail), then merges with its own `GITHUB_TOKEN`, passing GitHub's `sha` guard so a moved head is refused.
 The agent never holds the token.
 
-### Use it from Assistant, or any MCP agent
+### Use it from any MCP agent
 
 `apps/mcp` is an MCP server with four tools:
 
 - `okayed_actions` lists the actions and how to name exact targets.
-- `okayed_request` asks before acting. It returns at once if a standing policy allows the action; otherwise it waits for you.
+- `okayed_request` asks before acting. It returns at once if one of your rules allows the action; otherwise it waits for you.
 - `okayed_status` keeps waiting on a request.
 - `okayed_merge_pr` merges through okayed's tool.
 
@@ -244,33 +285,42 @@ npx wrangler pages deploy apps/playground/dist --project-name okayed-playground
 Or add the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ISSUER_SECRET` repository secrets and run the
 **deploy** workflow.
 
+### Use the components in your own app
+
+The web build also publishes okayed's design system as a [shadcn registry](https://ui.shadcn.com/docs/registry) at
+`/r/`: the theme, the engine and each component.
+
+```bash
+npx shadcn add https://okayed.pages.dev/r/approval-card.json
+# or add "@okayed": "https://okayed.pages.dev/r/{name}.json" to "registries" in components.json, then:
+npx shadcn add @okayed/okayed
+```
+
 ## Cloudflare assignment checklist
 
 | Requirement | Here |
 |---|---|
-| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`): Assistant's tool calling (`apps/worker/src/chat.ts`), plus drafting and explaining approvals and policies (`adapters.ts`) |
+| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`): the demo assistant's tool calling (`apps/worker/src/chat.ts`), plus drafting and explaining approvals and policies (`adapters.ts`) |
 | Workflow / coordination | Agents SDK: `OkayedAgent` (a Durable Object per user) and `OkayedChat` (`AIChatAgent`, per user); `AgentWorkflow` for request → propose → await confirm → issue → expire/revoke |
 | User input | Chat on Pages (`apps/web`), with AI SDK tool approval wired to okayed and live state over the Agents SDK WebSocket. Voice via Realtime is a stretch goal and not built. |
-| Memory / state | Chat history in `OkayedChat`'s SQLite; policies, budgets, requests, grants with use counters, passkeys and the audit log in `OkayedAgent` |
+| Memory / state | Chat history in `OkayedChat`'s SQLite; rules, limits, requests, grants with use counters, passkeys, paired approvers and the audit log in `OkayedAgent` |
 
 ## Not tied to Cloudflare
 
-Only `apps/worker` imports Cloudflare APIs. The service in `packages/core` depends on six small ports. The flow
+Only `apps/worker` imports Cloudflare APIs. The service in `packages/core` depends on six small ports, plus an
+optional `Notifier` for approver apps. The flow
 (`runGrantFlow`) is written once, and both Workflows and the in-memory runtime run it. Moving to another provider
 means implementing `Store` (needs a serializable transaction, e.g. a Postgres row lock), `Lifecycle` (Temporal, or a
-queue plus timers), `Drafter` (any chat model that can return JSON), `Signer` (KMS or HSM) and `Vault`. The core
+queue plus timers), `Drafter` (`OpenAICompatibleDrafter` already speaks to any OpenAI-compatible endpoint), `Signer` (KMS or HSM) and `Vault`. The core
 test suite already runs the whole flow (request, confirm, issue, once-only use, revoke, expiry, emergency stop) on
 the in-memory adapters in Node.
 
-## Fits with OpenMeadow, Buzz and Assistant
+## Where it fits
 
 - **OpenMeadow's thesis in miniature:** who the agent acts for (`iss` → `aud`), what it can touch (`act` + exact
   `res`), and how you take it back (`exp`, revoke, emergency stop).
-- **Nostr:** grants, revokes and receipts are ordinary signed Nostr events with NIP-40 expiration, so any
-  relay can carry them as they are. The `assurance` field is where a proof from another approver can
-  plug in later, replacing today's `web-click`.
-- **Assistant:** the first agent to wire up. Assistant calls `POST /requests` before a merge or deploy, waits for the grant, and
-  calls the merge tool. Assistant never holds a GitHub token.
+- **Nostr:** requests, grants, revokes, receipts and approvals are ordinary signed Nostr events with NIP-40
+  expiration, so any relay can carry them as they are.
 
 ## Limitations (v0)
 
@@ -282,7 +332,10 @@ the in-memory adapters in Node.
   its use, which is safe for the intended flow (agent → tool) but is not proof of who the caller is.
 - Learned PR heads come from agent requests unless `GITHUB_TOKEN` is set. With the token, the Worker checks the head
   against GitHub and refuses a mismatch.
-- Event kinds 4840–4844 and 34840 are placeholders, not registered NIPs.
+- Paired approver apps work end to end on okayed's side, but no app ships with okayed yet, and no `Notifier` adapter
+  is wired up on Cloudflare: an app polls its inbox.
+- The interpretation evals compare models only with your API credentials. The numbers here are the heuristic's.
+- Event kinds 4840–4845 and 34840 are placeholders, not registered NIPs.
 
 ## License
 

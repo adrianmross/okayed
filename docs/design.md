@@ -81,9 +81,29 @@ Each layer holds rules:
   - merges go ahead when checks pass
   - staging and preview deploys go ahead
   - production deploys and spending ask
-- **From words.** "let assistant merge anything in okayed when checks pass for 2 weeks, up to 30 merges" becomes a
-  standing policy with an agent, a repo scope, a condition, a horizon and a count. The model's draft can't widen any
-  of these. How open-ended a policy is stays the person's call.
+- **From words.** "always allow merges in okayed when checks pass for 2 weeks, up to 30 merges" becomes a standing
+  rule with a repo scope, a condition, a horizon and a count. The model's draft can't widen any of these. How
+  open-ended a rule is stays the person's call.
+- **From a request.** "Always allow…" on an approval card starts from `ruleFromRequest`: the narrowest rule that
+  covers requests like this one (a PR becomes its repository; a deploy keeps its site and environment; a purchase
+  keeps its amount; the agent and conditions carry over). The person widens it in the editor if they mean more.
+
+## Words
+
+The app speaks in everyday words and the API keeps the IAM ones, so people read the app easily and developers get
+precise terms. Each pair names one thing:
+
+| In the app | In the API, the format and these docs |
+|---|---|
+| request ("Assistant wants to…") | request (kind 4840) |
+| Allow · Ask me · Block; Allowed · Asks you · Blocked | `allow` · `ask` · `deny` |
+| rule | a rule in the person's policy layer |
+| permission | grant (kind 4841) |
+| receipt | use receipt (kind 4843) |
+| limit (uses or points) | budget; risk cost |
+| Take back · Stop everything | revoke (4842) · emergency stop (4844) |
+| Presets | default posture |
+| Allow once · Always allow… | confirm a card · `ruleFromRequest` |
 
 ## Components
 
@@ -116,34 +136,46 @@ in `packages/core`:
 | Port | What it needs | Cloudflare adapter | Elsewhere |
 |---|---|---|---|
 | `Store` | per-user key/value with a serializable `transaction` | Durable Object storage | Postgres row lock, SQLite, Redis `WATCH` |
-| `Drafter` | text in, JSON proposal out | Workers AI (Llama 3.3) | any chat model; `HeuristicDrafter` offline |
+| `Drafter` | text in, JSON proposal out | Workers AI (Llama 3.3) | `OpenAICompatibleDrafter` for any OpenAI-compatible endpoint; `HeuristicDrafter` offline |
 | `Lifecycle` | durable "wake me at t / when confirmed" | Workflows | Temporal, a cron + queue, in-process timers |
 | `Signer` | BIP-340 Schnorr over the event id | key from Worker secret | KMS, HSM, a hardware key |
 | `Vault` | swap a grant for a real credential | Worker secret | Vault, Secrets Manager |
 | `Clock` | `now()` in unix seconds | `Date.now` | — |
+| `Notifier` (optional) | wake a paired approver app | none yet: apps poll | a relay subscription, a push gateway, a webhook |
 
 `packages/core` ships in-memory adapters, and its tests run the whole flow (request, propose, confirm, issue,
 verify, second use refused, revoke, expire) in Node.
 
-## Identity and assurance (v0)
+## Identity, approvers and assurance (v0)
 
 A user is a Durable Object named by a random id. The person's browser holds an owner token, and agents get bearer
 tokens minted from the web app. Grants are signed with a per-user key derived from the service secret
 (HKDF(secret, user id)), so `iss` differs per user and can be pinned by verifiers.
 
+**Approvers** are where the person says yes. Every approver signs the same **binding**: `{v, card, draft, nonce}`,
+where `draft` is `sha256(JCS(the exact draft))`. The binding's JCS hash is the challenge, so a proof can only okay
+that exact draft.
+
+- **Local: a passkey.** The browser asks for the challenge and returns a WebAuthn assertion (Face ID, Touch ID,
+  Windows Hello, a security key).
+- **Pushed: a paired app on another device.** The person pairs the app's BIP-340 public key. When a card waits,
+  okayed keeps it in the person's inbox, bound to a fresh nonce, and may wake the app through the `Notifier` port
+  (the wake carries nothing). The app reads its inbox with a NIP-98 signed request, shows the card, and answers with
+  an approval event (kind 4845) signed by its own key. okayed checks the signature, that the key is paired, and that
+  the binding is the one it's waiting on, and that the draft hasn't changed. The transport is never trusted.
+
 `assurance` records how the person confirmed:
 
-- `policy`: a standing policy auto-approved it, and `assurance.policy` names the rules and budgets it drew on.
-- `webauthn`: the person approved with a passkey (Face ID, Touch ID, Windows Hello). The WebAuthn challenge is
-  `sha256(JCS({card, sha256(JCS(draft)), nonce}))`, so the assertion can only okay that exact draft. The assertion,
-  the binding and the public key ride on the grant as `assurance.proof`, so anyone can check it later.
+- `policy`: a rule allowed it, and `assurance.policy` names the rules and limits it drew on.
+- `webauthn`: a passkey. The assertion, the binding and the public key ride on the grant as `assurance.proof`.
+- `approver`: a paired app. Its signed answer and public key ride on the grant as `assurance.proof`.
 - `web-click`: a plain tap, where the browser has no passkey.
 
-A hardware key or an approver app's proof fits the same slot.
+A hardware key fits the passkey slot, and any app that can hold a key can be a pushed approver.
 
 ## The demo agent
 
-`OkayedChat` is an Agents SDK `AIChatAgent` per person, playing Assistant with simulated tools. AI SDK tool approval hands
+`OkayedChat` is an Agents SDK `AIChatAgent` per person: an assistant with simulated tools. AI SDK tool approval hands
 every tool call to okayed:
 
 - allowed by policy → `approved`
@@ -151,16 +183,39 @@ every tool call to okayed:
 - refused → `denied`
 
 The tool's `execute` then looks up the grant and spends it, so an approval the client claims without a grant does
-nothing. Offline, a scripted model plays Assistant by reading intent with okayed's own anchors.
+nothing. Offline, a scripted model plays the assistant by reading intent with okayed's own anchors.
 
-## How it fits with the rest of our stack
+## Interpreting people
+
+The model has one job before the engine: read the person. Some of that is open-ended (turn "merge #182 once CI
+passes, for 5 minutes" into a draft), and some is a bounded choice:
+
+- Is this an okay, a rule, or neither?
+- Which pending request does "that one" mean?
+- Which site, which environment?
+
+The engine already answers the last two deterministically, or asks. A model only has to get close.
+
+`packages/core/test/interpret.test.ts` scores drafters on twenty cases, from plain okays to prompt injections. It
+counts the intent (the bounded choice) on its own, and the outcome, which is what the engine ends up doing with the
+draft: the right grant, the right rule, a question, or nothing. A weak model can't widen anything, so it shows up as
+needless questions and missed meaning. The heuristic runs on every test run and guards a baseline. With credentials,
+`EVAL_MODELS` runs Workers AI models (Llama 3.3, gpt-oss), OpenAI, or any OpenAI-compatible endpoint side by side.
+
+Fast decision models fit the bounded part. OpenAI's Decisions API answers a question from a fixed set of options in
+one call, reportedly in about 150 ms. Jev is similar. Either could pick the intent and the request without drafting
+JSON. Neither is wired in yet: their API references couldn't be checked from this build environment, and each is a
+paid external service. The place for one is a drafter that asks the bounded questions and leaves the rest to the
+engine, scored by the same evals.
+
+## How it fits
 
 - **OpenMeadow** asks who an agent acts for, what it can touch, and how you take it back. okayed answers that one
   grant at a time, and its format is plain enough to show in a Meadow UI.
-- **Nostr relays** can carry okayed's events as they are: ordinary signed events on placeholder kinds
-  (4840–4844, 34840), and `assurance` can carry a proof from an approver app.
-- **Assistant.** Assistant can be the first agent on okayed: `POST /requests` before a merge or deploy, then pass the grant to
-  the tool gateway. No GitHub token ever reaches Assistant.
+- **Nostr relays** can carry okayed's events as they are: they are ordinary signed events on placeholder kinds
+  (4840–4845, 34840) with NIP-40 expiration.
+- **Agents** connect over MCP (`apps/mcp`) or the client (`packages/client`): `POST /requests` before a merge or
+  deploy, then the grant goes to the tool. No GitHub token reaches the agent.
 
 ## Out of scope for v0
 
