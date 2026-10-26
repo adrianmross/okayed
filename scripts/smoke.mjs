@@ -73,6 +73,21 @@ const s4 = await call("POST", `${u}/requests`, agentToken, { act: "github.pr.mer
 check(s4.status === "pending", "a spent shared budget asks, across policies");
 await call("PUT", `${u}/budgets`, ownerToken, { budgets: [] });
 
+// An approver app on another device: pair its key, read the inbox with a signed request, answer with a signed event.
+const { publicKeyOf, signEvent } = await import("../packages/grant/src/index.ts");
+const { answerTemplate } = await import("../packages/core/src/approvers.ts");
+const phone = crypto.getRandomValues(new Uint8Array(32));
+await call("POST", `${u}/approvers`, ownerToken, { pubkey: publicKeyOf(phone), name: "Phone" });
+const s5 = await call("POST", `${u}/requests`, agentToken, { act: "site.deploy", res: ["site:openmeadow.org/production"], why: "launch" });
+const inboxUrl = `${BASE}${u}/approvers/inbox`;
+const nip98 = signEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags: [["u", inboxUrl], ["method", "GET"]], content: "" }, phone);
+const inbox = await (await fetch(inboxUrl, { headers: { authorization: `Nostr ${btoa(JSON.stringify(nip98))}` } })).json();
+const pushed = inbox.find((x) => x.card === s5.cardId);
+check(!!pushed, "a waiting request reaches the paired approver app's inbox");
+await call("POST", `${u}/approvals`, null, { event: signEvent(answerTemplate({ v: 0, binding: pushed.binding, verdict: "allow" }, Math.floor(Date.now() / 1000)), phone) });
+const g5 = await call("GET", `${u}/requests/${s5.request.id}?wait=10`, agentToken);
+check(g5.status === "granted" && JSON.parse(g5.grant.content).assurance.method === "approver", "the app's signed answer issues the grant, with its proof");
+
 // The live-state socket must give nothing to a caller without the owner token.
 async function socketTypes(token) {
   const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/agents/okayed-agent/${userId}${token ? `?token=${token}` : ""}`);

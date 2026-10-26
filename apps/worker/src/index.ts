@@ -59,14 +59,17 @@ const INFO = {
     "POST /api/u/:user/cards/:card/confirm": "owner: { origin, assertion } approves with a passkey; without one, a plain okay",
     "POST /api/u/:user/cards/:card/deny": "owner",
     "POST /api/u/:user/passkeys/options | /passkeys": "owner: set up Face ID / Touch ID for approving",
-    "WS /agents/okayed-chat/:user?token=": "owner: the demo chat with Assistant (Agents SDK AIChatAgent)",
+    "POST /api/u/:user/approvers": "owner: { pubkey, name } pairs an approver app on another device",
+    "GET /api/u/:user/approvers/inbox": "approver app, signed (NIP-98): approvals waiting for it",
+    "POST /api/u/:user/approvals": "approver app: { event } a signed kind-4845 answer",
+    "WS /agents/okayed-chat/:user?token=": "owner: the demo chat (Agents SDK AIChatAgent)",
     "POST /api/u/:user/grants/:grant/revoke": "owner: { reason? }",
-    "POST /api/u/:user/stop | /resume": "owner: emergency stop / resume auto-approval",
+    "POST /api/u/:user/stop | /resume": "owner: take back every permission and pause rules / resume them",
     "POST /api/u/:user/agents": "owner: { name } → agent token (shown once)",
     "PUT /api/u/:user/targets": "owner: { repos?, sites? }",
-    "PUT /api/u/:user/policy": "owner: { rules } replaces your standing policies",
-    "PUT /api/u/:user/budgets": "owner: { budgets } shared budgets, global or scoped (none by default)",
-    "POST /api/u/:user/rules/:key/topup": "owner: reset what a policy (rule id) or shared budget (budget:<id>) has spent",
+    "PUT /api/u/:user/policy": "owner: { rules } replaces your rules",
+    "PUT /api/u/:user/budgets": "owner: { budgets } limits shared across rules, global or scoped (none by default)",
+    "POST /api/u/:user/rules/:key/topup": "owner: reset what a rule (its id) or a shared limit (budget:<id>) has used",
     "POST /api/u/:user/requests": "agent: { act, res[], why, ttl? }",
     "GET /api/u/:user/requests/:id?wait=10": "agent: status, and the grant event once issued",
     "POST /api/u/:user/tools/github/merge": "agent: { grant, owner, repo, number, sha } — merges using okayed's token",
@@ -112,6 +115,8 @@ export default {
     // Anyone.
     if (route === "POST /verify") return send(await stub.openApi("verify", [b]));
     if (route === "GET /issuer") return send(await stub.openApi("issuer", []));
+    if (route === "GET /approvers/inbox") return send(await stub.openApi("inbox", [req.headers.get("authorization"), req.url]));
+    if (route === "POST /approvals") return send(await stub.openApi("answer", [b.event ?? b]));
 
     // Agents.
     if (token?.startsWith("agt_")) {
@@ -139,11 +144,13 @@ export default {
     if (route === "PUT /budgets") return call("setBudgets", [b.budgets]);
     if (route === "POST /passkeys/options") return call("passkeyOptions", [b.origin]);
     if (route === "POST /passkeys") return call("addPasskey", [b.origin, b.response, b.name]);
+    if (route === "POST /approvers") return call("pairApprover", [b.pubkey, b.name]);
     let x: RegExpExecArray | null;
     if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/challenge$/.exec(route))) return call("approvalChallenge", [x[1], b.origin]);
     if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/confirm$/.exec(route))) return b.assertion ? call("confirmWithPasskey", [x[1], b.origin, b.assertion]) : call("confirm", [x[1]]);
     if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/deny$/.exec(route))) return call("deny", [x[1]]);
     if ((x = /^DELETE \/passkeys\/([A-Za-z0-9_-]+)$/.exec(route))) return call("removePasskey", [x[1]]);
+    if ((x = /^DELETE \/approvers\/([0-9a-f]{64})$/.exec(route))) return call("unpairApprover", [x[1]]);
     if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(route))) return call("revoke", [x[1], b.reason]);
     if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decodeURIComponent(route)))) return call("removeAgent", [x[1]]);
     if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decodeURIComponent(route)))) return call("topUp", [x[1]]);

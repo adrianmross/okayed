@@ -37,7 +37,8 @@ import {
 } from "@okayed/grant";
 import { chatCard, draftOf, grantCard } from "./cards.ts";
 import type { FlowTarget } from "./flow.ts";
-import { approvalOptions, bindingFor, registrationOptions, verifyApproval, verifyRegistration, type ApprovalBinding, type RelyingParty, type StoredPasskey } from "./passkeys.ts";
+import { bindingFor, readAnswer, readHttpAuth, type ApprovalBinding, type Notifier, type PairedApprover, type PushedApproval } from "./approvers.ts";
+import { approvalOptions, registrationOptions, verifyApproval, verifyRegistration, type RelyingParty, type StoredPasskey } from "./passkeys.ts";
 import type { Clock, DraftContext, Drafter, Lifecycle, Randomness, Signer, Store } from "./ports.ts";
 import {
   OkayedError,
@@ -63,6 +64,8 @@ export interface ServiceDeps {
   drafter: Drafter;
   lifecycle: Lifecycle;
   random: Randomness;
+  /** Wakes paired approver apps when an approval is waiting for them. Optional: they can also just poll. */
+  notifier?: Notifier;
 }
 
 const AUDIT_MAX = 300;
@@ -239,7 +242,10 @@ export class OkayedService implements FlowTarget {
 
     if (out.card) {
       await this.d.lifecycle.start(out.card.id, { userId: this.d.userId, proposalId: out.card.id, waitSeconds: request.exp - now, auto: out.auto });
-      if (!out.auto) await this.attachExplanation(out.card);
+      if (!out.auto) {
+        await this.attachExplanation(out.card);
+        await this.push(out.card, request.exp);
+      }
     }
     const status = out.auto ? "approving" : out.rec.status;
     const reply: { request: Request; status: RequestStatus | "approving"; cardId?: string; reason?: string } = { request, status };
@@ -331,6 +337,69 @@ export class OkayedService implements FlowTarget {
     return this.confirm(cardId, "webauthn", verified.proof);
   }
 
+  // ---------- approver apps on other devices ----------
+
+  private async approvers(tx: Pick<Store, "get"> = this.d.store): Promise<PairedApprover[]> {
+    return (await tx.get<PairedApprover[]>("approvers")) ?? [];
+  }
+
+  /** Pairs an approver app by its public key, so approvals can be pushed to it and answered from there. */
+  async pairApprover(pubkey: unknown, name?: unknown): Promise<PairedApprover> {
+    if (typeof pubkey !== "string" || !/^[0-9a-f]{64}$/.test(pubkey)) throw new OkayedError(400, "pubkey must be 64 hex characters");
+    const a: PairedApprover = { pubkey, name: typeof name === "string" && name.trim() ? name.trim().slice(0, 40) : "Approver app", createdAt: this.d.clock.now() };
+    await this.d.store.transaction(async (tx) => {
+      await tx.put("approvers", [...(await this.approvers(tx)).filter((x) => x.pubkey !== pubkey), a]);
+      await this.audit(tx, { type: "approver", text: `Paired ${a.name} for approvals.` });
+    });
+    return a;
+  }
+
+  async unpairApprover(pubkey: string): Promise<void> {
+    await this.d.store.transaction(async (tx) => {
+      await tx.put("approvers", (await this.approvers(tx)).filter((a) => a.pubkey !== pubkey));
+      await this.audit(tx, { type: "approver", text: "Unpaired an approver app." });
+    });
+  }
+
+  /** Puts an open card in the paired apps' inbox, bound to its exact draft, and wakes them. */
+  private async push(card: Card, exp: number): Promise<void> {
+    const approvers = await this.approvers();
+    if (!approvers.length || card.status !== "open") return;
+    const binding = bindingFor(card.id, card.draft ?? card.rules ?? card.sentence, this.d.random.hex(8));
+    const item: PushedApproval = { v: 0, card: card.id, binding, sentence: card.sentence, exp };
+    if (card.draft) Object.assign(item, { act: card.draft.act, res: card.draft.res, risk: card.draft.risk });
+    await this.d.store.put(`ap:card:${card.id}`, item);
+    for (const a of approvers) await this.d.notifier?.notify(a).catch(() => undefined);
+  }
+
+  /** What's waiting for one paired app. The app signs the request (NIP-98), so only it can read its inbox. */
+  async inbox(auth: string | null, url: string): Promise<PushedApproval[]> {
+    const now = this.d.clock.now();
+    const who = readHttpAuth(auth, url, "GET", now);
+    if (!who.ok) throw new OkayedError(401, who.reason);
+    if (!(await this.approvers()).some((a) => a.pubkey === who.pubkey)) throw new OkayedError(403, "that approver isn't paired");
+    const out: PushedApproval[] = [];
+    for (const [, p] of await this.d.store.list<PushedApproval>("ap:card:")) {
+      const card = await this.d.store.get<Card>(`card:${p.card}`);
+      if (card?.status === "open" && p.exp > now) out.push(p);
+    }
+    return out;
+  }
+
+  /** An app's signed answer (kind 4845). Allowing confirms the card, with the event as the grant's proof. */
+  async answer(e: unknown): Promise<Card> {
+    const cardId = (e as { tags?: unknown })?.tags && Array.isArray((e as NostrEvent).tags) ? (e as NostrEvent).tags.find((t) => t[0] === "card")?.[1] : undefined;
+    const pending = cardId ? await this.d.store.get<PushedApproval>(`ap:card:${cardId}`) : undefined;
+    if (!cardId || !pending || pending.exp <= this.d.clock.now()) throw new OkayedError(409, "nothing is waiting for that approval");
+    const card = await this.d.store.get<Card>(`card:${cardId}`);
+    if (!card || card.status !== "open") throw new OkayedError(409, "this isn't waiting for an okay anymore");
+    if (bindingFor(cardId, card.draft ?? card.rules ?? card.sentence, pending.binding.nonce).draft !== pending.binding.draft) throw new OkayedError(409, "the request changed after it was sent");
+    const check = readAnswer(e, await this.approvers(), pending.binding);
+    if (!check.ok) throw new OkayedError(401, check.reason);
+    await this.d.store.delete(`ap:card:${cardId}`);
+    return check.answer.verdict === "allow" ? this.confirm(cardId, "approver", { approver: check.approver.pubkey, event: e }) : this.deny(cardId);
+  }
+
   async requestStatus(agentId: string, id: string): Promise<{ status: RequestStatus; reason?: string; grant?: NostrEvent } | null> {
     const rec = await this.d.store.get<RequestRecord>(`req:${id}`);
     if (!rec || rec.request.aud !== agentId) return null;
@@ -368,7 +437,10 @@ export class OkayedService implements FlowTarget {
     if (card.kind === "grant") {
       await this.d.lifecycle.start(card.id, { userId: this.d.userId, proposalId: card.id, waitSeconds: CHAT_CARD_WAIT, auto: false });
     }
-    if (card.kind === "grant" || card.kind === "policy") await this.attachExplanation(card);
+    if (card.kind === "grant" || card.kind === "policy") {
+      await this.attachExplanation(card);
+      await this.push(card, now + CHAT_CARD_WAIT);
+    }
     return (await this.d.store.get<Card>(`card:${card.id}`)) ?? card;
   }
 
@@ -396,7 +468,7 @@ export class OkayedService implements FlowTarget {
       return card;
     });
     if (card.kind === "grant") {
-      const a: { method: "web-click" | "webauthn" | "approver"; at: number; proof?: unknown } = { method: assurance === "policy" ? "web-click" : assurance, at: now };
+      const a: { method: Exclude<Assurance["method"], "policy">; at: number; proof?: unknown } = { method: assurance === "policy" ? "web-click" : assurance, at: now };
       if (proof !== undefined) a.proof = proof;
       await this.d.lifecycle.send(cardId, { type: "decision", decision: "confirm", assurance: a });
     }
@@ -676,7 +748,7 @@ export class OkayedService implements FlowTarget {
     const s = this.d.store;
     const who = { userId: this.d.userId, issuer: this.d.signer.pubkey, drafter: this.d.drafter.name };
     const snap = await buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), await this.usage(s), this.d.clock.now());
-    return { ...snap, passkeys: (await this.passkeys(s)).map(({ id, name, rpID, createdAt }) => ({ id, name, rpID, createdAt })) };
+    return { ...snap, passkeys: (await this.passkeys(s)).map(({ id, name, rpID, createdAt }) => ({ id, name, rpID, createdAt })), approvers: await this.approvers(s) };
   }
 
   async events(): Promise<NostrEvent[]> {

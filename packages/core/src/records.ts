@@ -139,5 +139,7 @@ export interface Snapshot {
   /** What each standing policy has spent, by rule id. */
   usage: Usage;
   passkeys: { id: string; name: string; rpID: string; createdAt: number }[];
+  /** Approver apps paired on other devices. */
+  approvers: { pubkey: string; name: string; createdAt: number }[];
 }
 

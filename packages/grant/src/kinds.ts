@@ -5,6 +5,7 @@ export const KIND = {
   revoke: 4842,
   receipt: 4843,
   stop: 4844,
+  approval: 4845,
   policy: 34840,
 } as const;
 

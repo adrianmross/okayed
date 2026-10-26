@@ -67,7 +67,7 @@ export interface Drafter {
 }
 
 export type FlowEvent =
-  | { type: "decision"; decision: "confirm"; assurance: { method: "web-click" | "webauthn" | "approver"; at: number; proof?: unknown } }
+  | { type: "decision"; decision: "confirm"; assurance: { method: "web-click" | "webauthn" | "approver" | "approver"; at: number; proof?: unknown } }
   | { type: "decision"; decision: "deny" }
   | { type: "revoke"; reason: string };
 

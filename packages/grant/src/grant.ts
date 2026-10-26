@@ -7,12 +7,12 @@ import { jcs } from "./jcs.ts";
 import { KIND } from "./kinds.ts";
 import { signEvent, tag, verifyEvent, type EventTemplate, type NostrEvent } from "./nostr.ts";
 
-export type AssuranceMethod = "policy" | "web-click" | "webauthn" | "approver";
+export type AssuranceMethod = "policy" | "web-click" | "webauthn" | "approver" | "approver";
 
 export interface Assurance {
   method: AssuranceMethod;
   at: number;
-  /** A proof for methods that have one (WebAuthn assertion, an approver app's signed answer). */
+  /** A proof for methods that have one: a WebAuthn assertion, or an approver app's signed approval event. */
   proof?: unknown;
   /** For `policy`: the ids of the standing policies that auto-approved it and were charged for it. */
   policy?: string[];
