@@ -4,7 +4,7 @@ import type { Request, Targets } from "@okayed/engine";
 export const NOW = Math.floor(Date.now() / 1000);
 export const SHA = "3f9a1c2e4b5d6f708192a3b4c5d6e7f801234567";
 export const PR = `github:adrianmross/okayed/pull/182@${SHA}`;
-const BAP_PR = "github:adrianmross/matrix/pull/7@aaaa1c2e4b5d6f708192a3b4c5d6e7f801234567";
+const OTHER_PR = "github:adrianmross/matrix/pull/7@aaaa1c2e4b5d6f708192a3b4c5d6e7f801234567";
 
 export const TARGETS: Targets = {
   repos: ["adrianmross/okayed", "adrianmross/matrix"],
@@ -28,7 +28,7 @@ export const REQUESTS: Record<string, Request | null> = {
 export const DRAFTS: Record<string, unknown> = {
   honest: { request: "r_182", act: "github.pr.merge", res: [PR] },
   "over-eager": { act: "github.*", res: ["github:adrianmross/**"], ttl: 7 * 86400, uses: 100 },
-  "prompt-injected": { act: "github.pr.merge", res: [PR, BAP_PR], ttl: 10 ** 9, uses: 9999, aud: "agent:mallory", when: [{ c: "attacker.says.ok" }] },
+  "prompt-injected": { act: "github.pr.merge", res: [PR, OTHER_PR], ttl: 10 ** 9, uses: 9999, aud: "agent:mallory", when: [{ c: "attacker.says.ok" }] },
   sideways: { act: "site.deploy", res: ["site:openmeadow.org/production"] },
   broken: "Sure! Here's the grant you asked for 🙂",
 };
