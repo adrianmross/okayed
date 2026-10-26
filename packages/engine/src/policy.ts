@@ -120,7 +120,7 @@ function sentence(v: LayerVerdict, act: string): string {
     case "ask":
       return `Asks you (${v.layer}: ${v.why}).`;
     default:
-      return `Allowed: every layer lets the agent ${verb} this.`;
+      return `Allowed: your rules let the agent ${verb} this.`;
   }
 }
 
