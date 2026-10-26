@@ -148,3 +148,28 @@ building rules. Make your own design system for this project (it can be standalo
 - `fix(core): let the scripted assistant read denials however they arrive`
 - `test: run the demo end to end in a browser with a virtual Face ID`
 - `docs: describe the chat demo, passkey assurance and the design system`
+
+## 8. Everyday words, approver apps, a registry, other models
+
+```text
+Which works better, rules or policies, and grants or approvals? Anything else language-wise we could improve?
+```
+
+```text
+Build it with local assurance through WebAuthn now, and an external authenticator like [redacted] later, with the
+approval pushed there. Maybe we need our own shadcn registry, since that's recently supported. It would also be
+interesting to try different models for the interpretation, or a decision API.
+```
+
+The app now says rules, Allow / Ask me / Block, permissions, limits and Take back; the API, grant format and docs keep
+the IAM terms.
+
+- `feat(ui): say rules and permissions, and add "Always allow…"`
+- `feat(core): push approvals to approver apps on other devices`
+- `feat(design): publish the design system as a shadcn registry`
+- `fix(engine): keep the place in "never deploy to production"`
+- `feat(core): compare interpreters on an eval set, and draft with any OpenAI-compatible model`
+- `refactor: list each assurance method once, and rename a playground constant`
+- `fix(ui): say "your rules" when something is allowed, and name agents properly on tiles`
+- `test(e2e): wait for the assistant to finish before sending the next message`
+- `docs: describe the new words, approvers, the registry and interpreter evals`

@@ -15,6 +15,7 @@ clients that know nothing about okayed still drop it once it expires.
 | 4842 | revoke | `Revoke` | Stops a grant before `exp`. |
 | 4843 | use receipt | `UseReceipt` | One use of a grant was spent. |
 | 4844 | emergency stop | `Stop` | Revokes every live grant and pauses auto-approval. |
+| 4845 | approval | `ApprovalAnswer` | A paired approver app's answer to one card, signed by the app's own key. |
 | 34840 | policy | `Policy` | Addressable (`d` = `"policy"`); the newest revision wins. |
 
 Every event's `content` is the [JCS](https://www.rfc-editor.org/rfc/rfc8785) serialization of its object, and its
@@ -54,7 +55,7 @@ Every event's `content` is the [JCS](https://www.rfc-editor.org/rfc/rfc8785) ser
 | `exp` | unix s | Not valid at or after. Must also be the `expiration` tag. |
 | `uses` | int ≥ 1 | How many times it may be used. There is no "unlimited". |
 | `risk` | `low` \| `medium` \| `high` \| `critical` | Computed by the engine, not by the model. |
-| `assurance` | `{method, at, proof?, policy?}` | How the person confirmed: `web-click` today, later `webauthn` or `approver` with `proof`. For `policy` (auto-approved by a standing policy), `policy` lists the rules that allowed it and the shared budgets it drew on (`budget:<id>`). |
+| `assurance` | `{method, at, proof?, policy?}` | How the person confirmed: `webauthn` (a passkey) or `approver` (a paired app), each with a `proof`, or `web-click` (a plain tap). For `policy` (a standing rule allowed it), `policy` lists the rules that allowed it and the shared budgets it drew on (`budget:<id>`). |
 | `from` | `{utterance, request}` | The person's words, and the request id it answers (`null` for a pre-approval). For audit only; never used to decide. |
 | `nonce` | hex(8+) | Makes otherwise identical grants distinct. |
 
@@ -136,6 +137,29 @@ To check it:
 3. Verify the signature over `authenticatorData || sha256(clientDataJSON)` with `publicKey`, with user verification
    required.
 
+## Approver app assurance
+
+A paired approver app on another device answers with a signed approval event, and `assurance` is:
+
+```json
+{
+  "method": "approver",
+  "at": 1761735598,
+  "proof": { "approver": "<the app's BIP-340 public key>", "event": { "kind": 4845, "…": "…" } }
+}
+```
+
+The event's `content` is `JCS({v: 0, binding, verdict: "allow"})`, with the same binding as for a passkey. Its tags
+are `["x", sha256(JCS(binding))]`, `["card", <card id>]` and `["verdict", "allow"]`. To check it:
+
+1. The event signature is valid, `kind == 4845`, and `pubkey == proof.approver`. The approver was paired with the
+   issuer; okayed lists paired keys in the person's state.
+2. `x` equals `sha256(JCS(binding))`, and `verdict` is `allow`.
+3. `binding.draft` matches the grant, as for a passkey.
+
+The app reads what's waiting from the issuer's inbox with a NIP-98 signed `GET` (kind 27235, tags `u` and `method`,
+signed within the last minute). The inbox lists `{card, binding, sentence, act, res, risk, exp}` for each open card.
+
 ## Other objects
 
 ```ts
@@ -143,6 +167,7 @@ Request    { v: 0, id, aud, act, res: string[], why: string, at, exp }
 Revoke     { v: 0, grant: id, reason: string, at }
 UseReceipt { v: 0, grant: id, use: n, left: n, act, res, at }
 Stop       { v: 0, reason: string, at }
+ApprovalAnswer { v: 0, binding: { v: 0, card, draft, nonce }, verdict: "allow" | "deny" }
 Policy     { v: 0, layers: [{ name, default: "allow" | "ask" | "deny" | "abstain", rules: Rule[] }], budgets?: SharedBudget[], at }
 SharedBudget { id, uses?, risk?, scope?: { act?, res?, agent? }, counts?: "auto" | "all", until?, note? }
 Rule       { id, effect: "allow" | "ask" | "deny", act, res?, agent?,
@@ -155,9 +180,6 @@ Rule       { id, effect: "allow" | "ask" | "deny", act, res?, agent?,
 
 Risk costs for budgets: `low` 1, `medium` 3, `high` 8, `critical` 20. A policy event (kind 34840) is signed whenever
 the person's rules change. What each rule has spent is service state, not part of any event.
-
-```
-```
 
 ## Verifying a use
 
