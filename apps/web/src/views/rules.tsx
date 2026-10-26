@@ -1,5 +1,5 @@
 import type { Card } from "@okayed/core";
-import { ActionTile, NewRuleTile, RuleEditor, RuleTile, blankRule, tileTitle } from "@okayed/design/okayed";
+import { ActionTile, NewRuleTile, RuleEditor, RuleTile, agentName, blankRule, tileTitle } from "@okayed/design/okayed";
 import { Button } from "@okayed/design/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@okayed/design/ui/dropdown-menu";
 import { Input } from "@okayed/design/ui/input";
@@ -32,7 +32,7 @@ export function RulesView() {
               const p = ruleParts(r, now, snap.usage);
               const spent = !!r.budget && /^0 of/.test(p.budget ?? "");
               const t = tileTitle(r);
-              const sub = [!t.usedWhere && p.where, p.agent && `for ${p.agent}`, p.only && `if ${p.only}`, p.budget, p.horizon].filter(Boolean).join(" · ");
+              const sub = [!t.usedWhere && p.where, r.agent && `for ${agentName(r.agent)}`, p.only && `if ${p.only}`, p.budget, p.horizon].filter(Boolean).join(" · ");
               return (
                 <RuleTile
                   key={r.id}

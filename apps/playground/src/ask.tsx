@@ -88,7 +88,7 @@ export function AskView() {
                 effect={r.effect}
                 spent={!!r.budget && /^0 of/.test(p.budget ?? "")}
                 title={t.title}
-                subtitle={[!t.usedWhere && p.where, p.agent && `for ${p.agent}`, p.only && `if ${p.only}`, p.budget, p.horizon].filter(Boolean).join(" · ") || (r.effect === "allow" ? "anywhere, any time" : "always asks")}
+                subtitle={[!t.usedWhere && p.where, r.agent && `for ${agentName(r.agent)}`, p.only && `if ${p.only}`, p.budget, p.horizon].filter(Boolean).join(" · ") || (r.effect === "allow" ? "anywhere, any time" : "always asks")}
                 onClick={() => setEditing({ rule: r, isNew: false })}
               />
             );
