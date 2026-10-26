@@ -1,0 +1,126 @@
+{
+  "name": "okayed",
+  "homepage": "https://github.com/adrianmross/okayed",
+  "items": [
+    {
+      "name": "okayed-theme",
+      "type": "registry:theme",
+      "title": "okayed theme",
+      "description": "Cool neutrals, one cobalt seal accent, semantic allow/ask/deny colours, Shortcuts-style action tiles, and the seal and rise animations.",
+      "css": "src/styles/okayed.css"
+    },
+    {
+      "name": "okayed-engine",
+      "type": "registry:lib",
+      "title": "okayed engine",
+      "description": "okayed's deterministic policy engine: rules, decisions, narrowing and plain-words explanations. Pure TypeScript, no dependencies.",
+      "dir": "../engine/src",
+      "target": "lib/okayed/engine"
+    },
+    {
+      "name": "okayed-primitives",
+      "type": "registry:component",
+      "title": "okayed primitives",
+      "description": "Action tiles, agent avatars, tokens, the seal, verdict pills and Shortcuts-style steps.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "okayed-theme"
+      ],
+      "files": [
+        "src/okayed/actions.ts",
+        "src/okayed/primitives.tsx"
+      ]
+    },
+    {
+      "name": "approval-card",
+      "type": "registry:component",
+      "title": "Approval card",
+      "description": "Who wants to do exactly what, within which scope, with Allow once, Always allow… and Don't allow.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "badge",
+        "button",
+        "collapsible",
+        "spinner",
+        "okayed-primitives",
+        "okayed-engine"
+      ],
+      "files": [
+        "src/okayed/approval.tsx"
+      ]
+    },
+    {
+      "name": "receipt-card",
+      "type": "registry:component",
+      "title": "Receipt card",
+      "description": "A signed permission as a ticket: what it allowed, who, how it was okayed, and whether it's still active.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "badge",
+        "button",
+        "okayed-primitives"
+      ],
+      "files": [
+        "src/okayed/receipt.tsx"
+      ]
+    },
+    {
+      "name": "rule-tile",
+      "type": "registry:component",
+      "title": "Rule tile",
+      "description": "A rule in a library grid, as Shortcuts shows a shortcut, plus the dashed New rule tile.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "okayed-primitives"
+      ],
+      "files": [
+        "src/okayed/rule.tsx"
+      ]
+    },
+    {
+      "name": "rule-editor",
+      "type": "registry:component",
+      "title": "Rule editor",
+      "description": "A Shortcuts-style editor: steps that read as one sentence, every value a token, with a live answer from the engine.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "button",
+        "popover",
+        "sheet",
+        "spinner",
+        "switch",
+        "okayed-primitives",
+        "okayed-engine"
+      ],
+      "files": [
+        "src/okayed/editor.tsx"
+      ]
+    },
+    {
+      "name": "okayed",
+      "type": "registry:block",
+      "title": "Everything okayed",
+      "description": "The theme, the engine and every okayed component.",
+      "registryDependencies": [
+        "okayed-theme",
+        "okayed-engine",
+        "okayed-primitives",
+        "approval-card",
+        "receipt-card",
+        "rule-tile",
+        "rule-editor"
+      ],
+      "files": []
+    }
+  ]
+}
