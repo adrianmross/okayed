@@ -7,13 +7,8 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { ACTIONS, actionMeta } from "./actions";
-import { ActionTile, AgentAvatar, Step, StepJoin, Token, VerdictPill } from "./primitives";
+import { ActionTile, AgentAvatar, Step, StepJoin, Token, VerdictPill, agentName } from "./primitives";
 
-/**
- * okayed's policy editor, after Siri Shortcuts: a stack of steps that read as one sentence, every value a token you
- * tap to change, with the plain-words rule and a live "try it" underneath. Pure props in, rules out, so the web app
- * saves to the server and the playground keeps them in the browser.
- */
 
 export interface EditorWorld {
   agents: string[];
@@ -24,7 +19,7 @@ export interface EditorWorld {
   now: number;
 }
 
-export interface PolicyEditorProps {
+export interface RuleEditorProps {
   rule: Rule;
   isNew: boolean;
   /** All the person's rules; the editor returns the whole list with this one added, changed or removed. */
@@ -33,12 +28,15 @@ export interface PolicyEditorProps {
   /** Resolve true to close the sheet. */
   onSave: (rules: Rule[], what: "added" | "saved" | "deleted") => Promise<boolean>;
   onClose: () => void;
-  /** Shown above the steps for a new policy, e.g. a "say it in words" box. */
+  /** Shown above the steps for a new rule, e.g. a "say it in words" box. */
   describe?: ReactNode;
+  /** The sheet's title and save button, when they should say more than "New rule" and "Add rule". */
+  title?: string;
+  saveLabel?: string;
 }
 
 export function blankRule(): Rule {
-  return { id: `p-${Math.random().toString(36).slice(2, 9)}`, effect: "allow", act: "github.pr.merge", when: [{ c: "checks.pass" }] };
+  return { id: `r-${Math.random().toString(36).slice(2, 9)}`, effect: "allow", act: "github.pr.merge", when: [{ c: "checks.pass" }] };
 }
 
 export const TILE_TITLE: Record<string, string> = {
@@ -59,7 +57,7 @@ export const PHRASE: Record<string, string> = {
   "*": "do anything",
 };
 
-/** A tile's name: the action, narrowed by where when the policy says ("Merge in okayed", "Deploy to staging"). */
+/** A tile's name: the action, narrowed by where when the rule says ("Merge in okayed", "Deploy to staging"). */
 export function tileTitle(r: Rule): { title: string; usedWhere: boolean } {
   const repo = /^github:[^/]+\/([^/*]+)\/\*\*$/.exec(r.res ?? "")?.[1];
   const env = /^site:[^/]+\/([^*/]+)$/.exec(r.res ?? "")?.[1];
@@ -103,10 +101,11 @@ export function Choice<T>({ value, options, onPick, tone = "plain", label }: { v
 const StepIcon = ({ children, tone = "any" }: { children: ReactNode; tone?: "any" | "policy" }) => <ActionTile tone={tone} icon={children} size="sm" />;
 
 /**
- * The policy editor, as a Shortcuts automation: a stack of steps that read as one sentence, each value a token you
- * tap to change. Underneath, the plain-words sentence and a live "try it" from the same engine okayed runs.
+ * The rule editor, after a Siri Shortcuts automation: a stack of steps that read as one sentence, each value a token
+ * you tap to change. Underneath, the plain-words rule and a live "try it" from the same engine okayed runs. Pure
+ * props in, rules out, so the web app saves to the server and the playground keeps them in the browser.
  */
-export function PolicyEditor({ rule, isNew, rules, world, onSave, onClose, describe }: PolicyEditorProps) {
+export function RuleEditor({ rule, isNew, rules, world, onSave, onClose, describe, title, saveLabel }: RuleEditorProps) {
   const [r, setR] = useState<Rule>(rule);
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<Rule>) => setR((x) => clean({ ...x, ...patch }));
@@ -120,13 +119,14 @@ export function PolicyEditor({ rule, isNew, rules, world, onSave, onClose, descr
     if (ok) onClose();
   };
 
-  const trial = useMemo(() => tryIt(r, rules, world.budgets, now, world.repos[0] ?? "adrianmross/okayed", world.usage), [r, rules, world, now]);
+  const asker = r.agent ?? agents[0] ?? "agent:demo";
+  const trial = useMemo(() => tryIt(r, rules, world.budgets, now, world.repos[0] ?? "adrianmross/okayed", world.usage, asker), [r, rules, world, now, asker]);
 
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-lg">
         <SheetHeader className="border-b">
-          <SheetTitle className="flex items-center gap-2"><ActionTile act={r.act === "*" ? undefined : r.act} size="sm" />{isNew ? "New policy" : tileTitle(rule).title}</SheetTitle>
+          <SheetTitle className="flex items-center gap-2"><ActionTile act={r.act === "*" ? undefined : r.act} size="sm" />{title ?? (isNew ? "New rule" : tileTitle(rule).title)}</SheetTitle>
           <SheetDescription>Tap any coloured word to change it.</SheetDescription>
         </SheetHeader>
 
@@ -137,7 +137,7 @@ export function PolicyEditor({ rule, isNew, rules, world, onSave, onClose, descr
             <Choice
               label="Agent"
               value={r.agent}
-              options={[["any agent", undefined, <UserIcon key="i" className="size-4" />], ...agents.map((a): [string, string | undefined, ReactNode] => [a.replace(/^agent:/, ""), a, <AgentAvatar key={a} agent={a} className="size-5 text-[10px]" />])]}
+              options={[["any agent", undefined, <UserIcon key="i" className="size-4" />], ...agents.map((a): [string, string | undefined, ReactNode] => [agentName(a), a, <AgentAvatar key={a} agent={a} className="size-5 text-[10px]" />])]}
               onPick={(agent) => set({ agent })}
             />{" "}
             asks to
@@ -209,7 +209,7 @@ export function PolicyEditor({ rule, isNew, rules, world, onSave, onClose, descr
             <div className="rounded-xl border p-3">
               <div className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">Try it</div>
               <p className="flex flex-wrap items-center gap-1.5">
-                If {(r.agent ?? "agent:assistant").replace(/^agent:/, "")} asked to {trial.ask} right now: <VerdictPill verdict={trial.verdict} />
+                If {agentName(asker)} asked to {trial.ask} right now: <VerdictPill verdict={trial.verdict} />
               </p>
               {trial.reason && <p className="mt-1 text-muted-foreground text-sm">{trial.reason}</p>}
             </div>
@@ -224,7 +224,7 @@ export function PolicyEditor({ rule, isNew, rules, world, onSave, onClose, descr
           )}
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button disabled={saving} onClick={() => save(isNew ? [...rules, r] : rules.map((x) => (x.id === rule.id ? r : x)))}>{saving && <Spinner />}{isNew ? "Add policy" : "Save"}</Button>
+            <Button disabled={saving} onClick={() => save(isNew ? [...rules, r] : rules.map((x) => (x.id === rule.id ? r : x)))}>{saving && <Spinner />}{saveLabel ?? (isNew ? "Add rule" : "Save")}</Button>
           </div>
         </SheetFooter>
       </SheetContent>
@@ -290,9 +290,9 @@ function SitePicker({ value, sites, onPick }: { value?: string; sites: { host: s
 
 function EffectPicker({ value, onPick }: { value: Effect; onPick: (e: Effect) => void }) {
   const opts: [Effect, string, string][] = [
-    ["allow", "Go ahead", "bg-allow text-white"],
+    ["allow", "Allow", "bg-allow text-white"],
     ["ask", "Ask me", "bg-ask text-black/80"],
-    ["deny", "Never", "bg-deny text-white"],
+    ["deny", "Block", "bg-deny text-white"],
   ];
   return (
     <span className="inline-flex gap-1 rounded-xl bg-muted p-1 align-middle">
@@ -305,8 +305,8 @@ function EffectPicker({ value, onPick }: { value: Effect; onPick: (e: Effect) =>
   );
 }
 
-/** The editor's live answer: the same engine, with this policy in place of the one being edited. */
-export function tryIt(r: Rule, rules: Rule[], budgets: SharedBudget[], now: number, repo: string, usage: Usage) {
+/** The editor's live answer: the same engine, with this rule in place of the one being edited. */
+export function tryIt(r: Rule, rules: Rule[], budgets: SharedBudget[], now: number, repo: string, usage: Usage, agent = r.agent ?? "agent:demo") {
   const act = r.act === "*" || r.act.endsWith("*") ? "github.pr.merge" : r.act;
   const site = /^site:([^*/]+)\/([^*]+)$/.exec(r.res ?? "");
   const repoFromRule = /^github:([^/]+\/[^/*]+)\/\*\*$/.exec(r.res ?? "")?.[1] ?? repo;
@@ -321,7 +321,7 @@ export function tryIt(r: Rule, rules: Rule[], budgets: SharedBudget[], now: numb
   if (!s) return null;
   const others = rules.filter((x) => x.id !== r.id);
   const policy: Policy = { layers: [{ name: YOU, default: "ask", rules: [...others, r] }], ...(budgets.length ? { budgets } : {}) };
-  const d = decideAll(policy, act, [s[0]], now, { agent: r.agent ?? "agent:assistant", usage });
+  const d = decideAll(policy, act, [s[0]], now, { agent, usage });
   return { verdict: d.verdict, reason: d.reason, ask: s[1] };
 }
 

@@ -53,7 +53,7 @@ describe("standing policies", () => {
     const d = decide(you(mergeAnything), "github.pr.merge", PR, NOW, { ...ASSISTANT, usage: { m: { uses: 3, risk: 24 } } });
     expect(d.verdict).toBe("ask");
     expect(d.layers[0]).toMatchObject({ spent: true, left: { uses: 0 } });
-    expect(d.reason).toMatch(/budget is spent/);
+    expect(d.reason).toMatch(/limit is used up/);
   });
 
   it("ask once a risk budget can't cover the next use", () => {
@@ -86,7 +86,7 @@ describe("shared budgets", () => {
   it("a spent pool turns a yes into a question, and says which pool", () => {
     const d = decide(withPool({ risk: 10 }), "github.pr.merge", PR, NOW, { ...ASSISTANT, usage: { "budget:pool": { uses: 1, risk: 8 } } });
     expect(d).toMatchObject({ verdict: "ask", spent: "budget:pool", decidedBy: "budget:pool" });
-    expect(d.reason).toMatch(/shared budget “pool” is spent/);
+    expect(d.reason).toMatch(/limit “pool” is used up/);
   });
 
   it("can be scoped to one action, or one agent", () => {

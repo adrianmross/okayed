@@ -26,43 +26,52 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.click("text=Start the demo");
-  await page.waitForSelector("text=What should Assistant do?", { timeout: 15000 });
+  await page.waitForSelector("text=What should we do?", { timeout: 15000 });
   check(true, "a new account opens on the chat");
 
   await page.click("text=Merge PR #182 in okayed");
-  await page.waitForSelector("text=/approved by your policy/", { timeout: 20000 });
-  check(await page.isVisible("text=by your policy"), "a checked merge goes ahead under the default posture, with a receipt");
+  await page.waitForSelector("text=/allowed by your rules/", { timeout: 20000 });
+  check(await page.isVisible("text=by your rules"), "a checked merge is allowed by the default rules, with a receipt");
 
   await page.fill("textarea", "Deploy openmeadow to production");
   await page.keyboard.press("Enter");
-  const faceId = page.locator('button:has-text("Face ID")').first();
+  const faceId = page.getByRole("button", { name: /^(Allow once|Set up Face ID and allow)$/ }).first();
   await faceId.waitFor({ timeout: 20000 });
   check(await page.isVisible("text=High risk"), "a production deploy asks, with a high-risk approval card");
   await faceId.click();
   await page.waitForSelector("text=/Deployed openmeadow.org to production/", { timeout: 30000 });
-  check(await page.isVisible("text=with Face ID"), "Face ID (a passkey bound to the request) approves it, and Assistant carries on");
+  check(await page.isVisible("text=with Face ID"), "Face ID (a passkey bound to the request) allows it, and the assistant carries on");
 
   await page.fill("textarea", "Buy openmeadow.dev for $12");
   await page.keyboard.press("Enter");
   await page.locator("text=Don't allow").first().waitFor({ timeout: 20000 });
   await page.locator("text=Don't allow").first().click();
   await page.waitForSelector("text=/Okay, I won't/", { timeout: 20000 });
-  check(true, "saying no stops the purchase, and Assistant says so");
+  check(true, "saying no stops the purchase, and the assistant says so");
+
+  await page.fill("textarea", "Deploy openmeadow to production");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Always allow…" }).last().click();
+  await page.getByRole("button", { name: "Add rule and allow" }).click();
+  await page.waitForSelector("text=Rule added.", { timeout: 10000 });
+  await page.waitForFunction(() => document.body.innerText.split("Deployed openmeadow.org to production").length > 2, null, { timeout: 30000 });
+  check(true, "“Always allow…” turns the request into a rule and allows it with one Face ID");
 
   await page.click('button:has-text("Transcript")');
   check(await page.isVisible("text=/\"assurance\": \"webauthn\"/"), "the transcript records the grant's Face ID assurance");
 
   await page.goto(`${WEB}/#activity`);
-  await page.click('button[role="tab"]:has-text("Receipts")');
-  await page.waitForSelector("text=/^grant [0-9a-f]{10}$/", { timeout: 10000 });
-  check((await page.locator("text=/^grant [0-9a-f]{10}$/").count()) >= 2, "Activity lists a receipt for each grant");
+  await page.click('button[role="tab"]:has-text("History")');
+  await page.waitForSelector("text=/^[0-9a-f]{10}$/", { timeout: 10000 });
+  check((await page.locator("text=/^[0-9a-f]{10}$/").count()) >= 3, "History keeps a signed receipt for each permission");
 
-  await page.goto(`${WEB}/#policies`);
+  await page.goto(`${WEB}/#rules`);
+  check(await page.isVisible("text=Deploy to production"), "the new rule is in Rules");
   await page.click("text=Merge PRs");
   await page.click('button[aria-pressed="false"]:has-text("Ask me")');
   await page.click('button:has-text("Save")');
-  await page.waitForSelector("text=Policy saved.", { timeout: 10000 });
-  check(true, "a policy can be changed in the Shortcuts-style editor");
+  await page.waitForSelector("text=Rule saved.", { timeout: 10000 });
+  check(true, "a rule can be changed in the Shortcuts-style editor");
 } catch (e) {
   check(false, `the flow ran to the end (${e.message.split("\n")[0]})`);
 }

@@ -11,19 +11,20 @@ import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { describeRule } from "@okayed/engine";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useAgent } from "agents/react";
-import { ArrowUpIcon, SquarePenIcon } from "lucide-react";
+import { ArrowUpIcon, ScanFaceIcon, SquarePenIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useAlwaysAllow } from "../components/always-allow";
 import { useOkayed } from "../lib/okayed";
 import { passkeysSupported } from "../lib/passkey";
 
-/** How each of Assistant's tools reads in the chat: its action, and a title from its input. */
+/** How each of the assistant's tools reads in the chat: its action, and a title from its input. */
 const TOOLS: Record<string, { act: string; title: (i: Record<string, unknown>) => string }> = {
   read_repository: { act: "github.read", title: (i) => `Read ${i.repo ?? "a repository"}` },
   comment_on_pull_request: { act: "github.pr.comment", title: (i) => `Comment on PR #${i.number ?? "?"}` },
   merge_pull_request: { act: "github.pr.merge", title: (i) => `Merge PR #${i.number ?? "?"} in ${i.repo ?? "?"}` },
   deploy_site: { act: "site.deploy", title: (i) => `Deploy ${i.site ?? "a site"} to ${i.environment ?? "?"}` },
   buy: { act: "spend.money", title: (i) => `Buy ${i.item ?? "something"} for $${i.amount_usd ?? "?"}` },
-  propose_policy: { act: "policy", title: () => "Propose a policy" },
+  propose_policy: { act: "policy", title: () => "Suggest a rule" },
 };
 
 const SUGGESTIONS: [string, string][] = [
@@ -31,8 +32,8 @@ const SUGGESTIONS: [string, string][] = [
   ["site.deploy", "Deploy openmeadow to production"],
   ["github.pr.comment", "Comment on PR #182: ship it"],
   ["spend.money", "Buy openmeadow.dev for $12"],
-  ["policy", "Let Assistant merge anything in okayed for 2 weeks, up to 30 merges"],
-  ["github.read", "Read the matrix repo"],
+  ["policy", "Always allow merges in okayed for 2 weeks, up to 30 merges"],
+  ["github.read", "Read the okayed repo"],
 ];
 
 type View = "conversation" | "receipts" | "transcript";
@@ -56,7 +57,7 @@ export function ChatView() {
     <div className="flex h-svh min-h-0 flex-1 flex-col md:h-[calc(100svh-1rem)]">
       <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2.5 md:px-6">
         <div className="flex items-center gap-2">
-          <ActionTile tone="policy" icon={<span className="font-semibold text-sm">C</span>} size="sm" />
+          <ActionTile tone="policy" icon={<span className="font-semibold text-sm">A</span>} size="sm" />
           <div className="leading-tight">
             <div className="font-semibold">Assistant</div>
             <div className="hidden text-muted-foreground text-xs sm:block">{busy ? "working…" : "every action goes through okayed"}</div>
@@ -82,7 +83,7 @@ export function ChatView() {
             )}
             {chat.status === "submitted" && (
               <Message from="assistant">
-                <Shimmer className="text-sm">Assistant is thinking…</Shimmer>
+                <Shimmer className="text-sm">Thinking…</Shimmer>
               </Message>
             )}
           </ConversationContent>
@@ -101,9 +102,9 @@ function Suggestions({ onPick }: { onPick: (t: string) => void }) {
   return (
     <div className="flex flex-col items-center gap-6 py-[8vh] text-center">
       <div className="space-y-2">
-        <h2 className="font-semibold text-3xl">What should Assistant do?</h2>
+        <h2 className="font-semibold text-3xl">What should we do?</h2>
         <p className="mx-auto max-w-[46ch] text-muted-foreground">
-          Ask for something that needs permission. Your policies decide whether it goes ahead; when they ask you, approve with Face ID right here.
+          Ask for something that needs permission. Your rules decide whether it's allowed, and when they ask you, you allow it with Face ID right here.
         </p>
       </div>
       <div className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
@@ -145,12 +146,12 @@ function Composer({ busy, onSend, onStop }: { busy: boolean; onSend: (t: string)
                 submit();
               }
             }}
-            placeholder="Ask Assistant to merge, deploy, comment or buy…"
-            aria-label="Message Assistant"
+            placeholder="Ask the assistant to merge, deploy, comment or buy…"
+            aria-label="Message the assistant"
             className="min-h-12 text-[15px]"
           />
           <InputGroupAddon align="block-end" className="justify-between">
-            <span className="text-muted-foreground text-xs">Actions are simulated. Approvals and grants are real.</span>
+            <span className="text-muted-foreground text-xs">Actions are simulated. Permissions are real.</span>
             {busy ? (
               <InputGroupButton variant="secondary" size="sm" className="rounded-full" onClick={onStop}>Stop</InputGroupButton>
             ) : (
@@ -215,8 +216,9 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   const output = (part.state === "output-available" ? part.output : undefined) as { done?: boolean; grant?: string; summary?: string; card?: string; reason?: string } | undefined;
   const approval = "approval" in part ? (part.approval as { id: string; approved?: boolean; reason?: string } | undefined) : undefined;
   const [approving, setApproving] = useState(false);
+  const [alwaysAllow, editor] = useAlwaysAllow();
 
-  // Once okayed has issued the grant, tell the chat it was approved so Assistant carries on.
+  // Once okayed has issued the permission, tell the chat it was approved so the assistant carries on.
   const respondedFor = useRef<string | null>(null);
   useEffect(() => {
     if (part.state !== "approval-requested" || !approval || respondedFor.current === approval.id) return;
@@ -271,11 +273,13 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
           passkey={passkeysSupported() ? (okayed.snap?.passkeys.length ? "ready" : "setup") : "unsupported"}
           onApprove={() => approve()}
           onApprovePlain={() => approve(true)}
+          onAlwaysAllow={() => alwaysAllow(card)}
           onDeny={() => card && okayed.deny(card.id)}
         />
       )}
+      {editor}
 
-      {part.state === "output-available" && name === "propose_policy" && output?.card && <PolicyProposal cardId={output.card} />}
+      {part.state === "output-available" && name === "propose_policy" && output?.card && <RuleProposal cardId={output.card} />}
 
       {part.state === "output-available" && output?.done && output.grant && <ChatReceipt grantId={output.grant} req={req} title={output.summary ?? meta.title(input)} act={meta.act} />}
 
@@ -289,7 +293,7 @@ function ChatReceipt({ grantId, req, title, act }: { grantId: string; req?: Requ
   const okayed = useOkayed();
   const g = okayed.grant(grantId);
   if (!g) return null;
-  const via = g.grant.assurance.method === "webauthn" ? "with Face ID" : g.grant.assurance.method === "policy" ? "by your policy" : "by you";
+  const via = g.grant.assurance.method === "webauthn" ? "with Face ID" : g.grant.assurance.method === "policy" ? "by your rules" : "by you";
   return (
     <ReceiptCard
       compact
@@ -309,29 +313,29 @@ function ChatReceipt({ grantId, req, title, act }: { grantId: string; req?: Requ
   );
 }
 
-/** A policy Assistant proposed: the rules, in Shortcuts-like steps, and one decision. */
-function PolicyProposal({ cardId }: { cardId: string }) {
+/** A rule the assistant suggested: its steps, as in the editor, and one decision. */
+function RuleProposal({ cardId }: { cardId: string }) {
   const okayed = useOkayed();
   const card = okayed.card(cardId);
   if (!card || card.kind !== "policy") return card ? <p className="text-muted-foreground text-sm">{card.sentence}</p> : null;
   const now = okayed.snap?.now ?? Date.now() / 1000;
   return (
     <div className="w-full max-w-md animate-rise space-y-2 rounded-2xl border bg-card p-4 shadow-sm">
-      <div className="font-medium text-muted-foreground text-sm">Assistant proposes a standing policy</div>
+      <div className="font-medium text-muted-foreground text-sm">The assistant suggests a rule</div>
       {(card.rules ?? []).map((r) => (
         <Step key={r.id} icon={<ActionTile act={r.act} size="sm" />} className="shadow-none">
-          <Token tone={r.effect === "allow" ? "allow" : r.effect === "ask" ? "ask" : "deny"}>{r.effect === "allow" ? "Go ahead" : r.effect === "ask" ? "Ask me" : "Never"}</Token>
+          <Token tone={r.effect}>{r.effect === "ask" ? "Ask me" : r.effect === "allow" ? "Allow" : "Block"}</Token>
           <span className="text-muted-foreground"> · </span>
-          {describeRule(r, now).replace(/^(Auto-approve|Ask before|Never allow) /, "")}
+          {describeRule(r, now).replace(/^(Allow|Ask before|Block) /, "")}
         </Step>
       ))}
       {card.status === "open" ? (
         <div className="flex gap-2 pt-1">
-          <Button className="flex-1 rounded-xl" onClick={() => okayed.approve(card.id)}>Apply with Face ID</Button>
+          <Button className="flex-1 rounded-xl" onClick={() => okayed.approve(card.id)}><ScanFaceIcon />Add rule</Button>
           <Button variant="ghost" onClick={() => okayed.deny(card.id)}>Not now</Button>
         </div>
       ) : (
-        <p className="pt-1 text-muted-foreground text-sm">{card.status === "confirmed" ? "Applied. It's in Policies." : "Not applied."}</p>
+        <p className="pt-1 text-muted-foreground text-sm">{card.status === "confirmed" ? "Added. It's in Rules." : "Not added."}</p>
       )}
     </div>
   );
@@ -346,7 +350,7 @@ function ChatReceipts({ messages }: { messages: UIMessage[] }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl space-y-3 px-4 py-6 md:px-6">
-        {rows.length === 0 && <p className="py-16 text-center text-muted-foreground">No receipts in this chat yet. Each approved action leaves one.</p>}
+        {rows.length === 0 && <p className="py-16 text-center text-muted-foreground">No receipts in this chat yet. Everything that gets allowed leaves one.</p>}
         {rows.map(({ p, req }) => {
           const meta = TOOLS[getToolName(p)] ?? { act: "*", title: () => getToolName(p) };
           return <ChatReceipt key={p.toolCallId} grantId={req!.grantId!} req={req} act={meta.act} title={meta.title((p.input ?? {}) as Record<string, unknown>)} />;

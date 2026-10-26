@@ -387,7 +387,7 @@ export class OkayedService implements FlowTarget {
         card.status = "confirmed";
         await tx.put(`card:${cardId}`, card);
         const event = await this.d.signer.sign(policyTemplate({ layers: [next] }, now));
-        await this.audit(tx, { type: "policy", text: `Policy changed: ${(card.ruleTexts ?? []).join("; ")}.`, ref: cardId, event });
+        await this.audit(tx, { type: "policy", text: `Rules changed: ${(card.ruleTexts ?? []).join("; ")}.`, ref: cardId, event });
         return card;
       }
       if (card.kind !== "grant") throw new OkayedError(409, "nothing to confirm");
@@ -419,7 +419,7 @@ export class OkayedService implements FlowTarget {
     return (await this.d.store.get<Card>(`card:${cardId}`)) ?? card;
   }
 
-  async revoke(grantId: string, reason = "revoked by you"): Promise<GrantRecord> {
+  async revoke(grantId: string, reason = "taken back by you"): Promise<GrantRecord> {
     const now = this.d.clock.now();
     const event = await this.d.signer.sign(revokeTemplate({ v: 0, grant: grantId, reason, at: now }));
     const rec = await this.d.store.transaction(async (tx) => {
@@ -430,7 +430,7 @@ export class OkayedService implements FlowTarget {
       rec.revokedAt = now;
       rec.revokeReason = reason;
       await tx.put(`grant:${grantId}`, rec);
-      await this.audit(tx, { type: "revoke", text: `Revoked: ${sentenceFor(draftOf(rec.grant))} (${reason})`, ref: grantId, event });
+      await this.audit(tx, { type: "revoke", text: `Taken back: ${sentenceFor(draftOf(rec.grant))} (${reason})`, ref: grantId, event });
       return rec;
     });
     await this.d.lifecycle.send(rec.cardId, { type: "revoke", reason });
@@ -455,7 +455,7 @@ export class OkayedService implements FlowTarget {
         await tx.put(key, rec);
         out.push(rec);
       }
-      await this.audit(tx, { type: "stop", text: `Emergency stop: revoked ${out.length} grant(s) and paused auto-approval.`, event });
+      await this.audit(tx, { type: "stop", text: `Stopped everything: took back ${out.length} permission(s) and paused rules.`, event });
       return out;
     });
     for (const rec of revoked) await this.d.lifecycle.send(rec.cardId, { type: "revoke", reason });
@@ -467,7 +467,7 @@ export class OkayedService implements FlowTarget {
       const meta = await this.meta(tx);
       meta.paused = false;
       await tx.put("meta", meta);
-      await this.audit(tx, { type: "resume", text: "Auto-approval resumed." });
+      await this.audit(tx, { type: "resume", text: "Rules resumed." });
     });
   }
 
@@ -481,7 +481,7 @@ export class OkayedService implements FlowTarget {
     const event = await this.d.signer.sign(policyTemplate({ layers: [next] }, now));
     await this.d.store.transaction(async (tx) => {
       await tx.put("layer", next);
-      await this.audit(tx, { type: "policy", text: `Policy replaced: ${next.rules.length} rule(s).`, event });
+      await this.audit(tx, { type: "policy", text: `Rules replaced: ${next.rules.length} rule(s).`, event });
     });
     return next.rules;
   }
@@ -494,7 +494,7 @@ export class OkayedService implements FlowTarget {
     const list = budgets as SharedBudget[];
     await this.d.store.transaction(async (tx) => {
       await tx.put("budgets", list);
-      await this.audit(tx, { type: "policy", text: list.length ? `Shared budgets set: ${list.map((b) => b.note ?? b.id).join(", ")}.` : "Shared budgets removed." });
+      await this.audit(tx, { type: "policy", text: list.length ? `Limits set: ${list.map((b) => b.note ?? b.id).join(", ")}.` : "Limits removed." });
     });
     return list;
   }
@@ -508,7 +508,7 @@ export class OkayedService implements FlowTarget {
       const before = usage[key] ?? { uses: 0, risk: 0 };
       delete usage[key];
       await tx.put("usage", usage);
-      await this.audit(tx, { type: "policy", text: `Topped up ${label} after ${before.uses} use(s), ${before.risk} risk.`, ref: key });
+      await this.audit(tx, { type: "policy", text: `Reset the limit on ${label} after ${before.uses} use(s), ${before.risk} points.`, ref: key });
     });
   }
 
@@ -602,14 +602,14 @@ export class OkayedService implements FlowTarget {
         await this.audit(tx, { type: "deny", text: `Not issued: ${reason}`, ref: cardId });
         return null;
       };
-      if (assurance.method === "policy" && meta.paused) return close("auto-approval is paused after an emergency stop");
+      if (assurance.method === "policy" && meta.paused) return close("rules are paused after Stop everything");
       const usage = await this.usage(tx);
       const decision = decideAll(await this.policy(tx), draft.act, draft.res, now, { ...ctx, usage });
       if (decision.verdict === "deny") return close(decision.reason);
       // Auto-approvals draw on every budget that allowed them; your own okays draw only on pools that count them.
       let draws = decision.tallies;
       if (assurance.method === "policy") {
-        if (decision.verdict !== "allow") return close("policy no longer auto-approves this");
+        if (decision.verdict !== "allow") return close("your rules no longer allow this");
         if (decision.charges.map((c) => c.key).join() !== (assurance.policy ?? []).join()) return close("the policies changed while this was being issued");
         draws = decision.charges;
       }
@@ -641,7 +641,7 @@ export class OkayedService implements FlowTarget {
           }
         }
       }
-      const how = assurance.method === "policy" ? `auto-approved by your policy (${(assurance.policy ?? []).join(", ") || "no budget"})` : `confirmed (${assurance.method})`;
+      const how = assurance.method === "policy" ? `allowed by your rules (${(assurance.policy ?? []).join(", ")})` : `allowed by you (${assurance.method})`;
       await this.audit(tx, { type: "grant", text: `Issued, ${how}: ${sentenceFor(draft)}`, ref: grant.id, event });
       return { grantId: grant.id, exp: grant.exp };
     });
@@ -784,8 +784,8 @@ export class OkayedService implements FlowTarget {
       .sort((a, b) => b.grant.nbf - a.grant.nbf);
     const u = (await this.usage(tx))[key] ?? { uses: 0, risk: 0 };
     const recent = spentBy.slice(0, 3).map((g) => g.grant.res.map((r) => labelRes(r).replace(/ at [0-9a-f]{7}$/, "")).join(" and "));
-    const whose = key.startsWith("budget:") ? `The shared budget “${(await this.budgets(tx)).find((b) => `budget:${b.id}` === key)?.note ?? key.slice(7)}” is spent` : "Its budget is spent";
-    return `${whose}: ${u.uses} use${u.uses === 1 ? "" : "s"} using ${u.risk} risk${recent.length ? `, most recently ${recent.join("; ")}` : ""}. Top it up to let it continue.`;
+    const whose = key.startsWith("budget:") ? `The limit “${(await this.budgets(tx)).find((b) => `budget:${b.id}` === key)?.note ?? key.slice(7)}” is used up` : "Its limit is used up";
+    return `${whose}: ${u.uses} use${u.uses === 1 ? "" : "s"}, ${u.risk} points${recent.length ? `, most recently ${recent.join("; ")}` : ""}. Reset it to let it continue.`;
   }
 
   private async targets(tx: Pick<Store, "get">): Promise<Targets> {

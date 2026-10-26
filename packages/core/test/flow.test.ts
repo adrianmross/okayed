@@ -148,7 +148,7 @@ describe("chat", () => {
   it("sets policy in plain words; read-only GitHub is then auto-approved for an hour", async () => {
     const card = await t.svc.chat("auto-approve read-only GitHub for 1 hour; ask me before anything that spends money");
     expect(card.kind).toBe("policy");
-    expect(card.ruleTexts).toEqual(["Auto-approve reading GitHub for 1 hour", "Ask before spending money"]);
+    expect(card.ruleTexts).toEqual(["Allow reading GitHub for 1 hour", "Ask before spending money"]);
     await t.svc.confirm(card.id);
 
     const r = await t.svc.submitRequest(assistant, { act: "github.read", res: ["github:adrianmross/okayed"] });
@@ -285,7 +285,7 @@ describe("standing policies", () => {
     expect(sixth.r.status).toBe("pending");
     const card = (await t.svc.snapshot()).cards.find((c) => c.id === sixth.r.cardId)!;
     expect(card.topUp).toBe("merges");
-    expect(card.notes.join()).toMatch(/budget is spent: 5 uses using 40 risk, most recently PR #5 in adrianmross\/okayed; PR #4/);
+    expect(card.notes.join()).toMatch(/limit is used up: 5 uses, 40 points, most recently PR #5 in adrianmross\/okayed; PR #4/);
     await t.svc.topUp("merges");
     expect((await ask(7)).st!.status).toBe("granted");
   });
@@ -305,7 +305,7 @@ describe("standing policies", () => {
     expect(third.r.status).toBe("pending");
     const card = (await t.svc.snapshot()).cards.find((c) => c.id === third.r.cardId)!;
     expect(card.topUp).toBe("budget:today");
-    expect(card.notes.join()).toMatch(/shared budget “today” is spent: 2 uses using 16 risk/);
+    expect(card.notes.join()).toMatch(/limit “today” is used up: 2 uses, 16 points/);
     await t.svc.topUp("budget:today");
     expect((await ask(4)).st!.status).toBe("granted");
   });

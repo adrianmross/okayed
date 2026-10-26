@@ -23,7 +23,7 @@ export function App() {
             okayed <span className="font-normal text-muted-foreground">playground</span>
           </a>
           <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && (location.hash = v)} className="ml-auto">
-            <ToggleGroupItem value="ask">Ask a policy</ToggleGroupItem>
+            <ToggleGroupItem value="ask">Ask your rules</ToggleGroupItem>
             <ToggleGroupItem value="words">Words → grant</ToggleGroupItem>
           </ToggleGroup>
           <a href={WEB} className="text-muted-foreground text-sm underline-offset-4 hover:underline">Try the demo ↗</a>

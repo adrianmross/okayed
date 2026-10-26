@@ -1,29 +1,30 @@
-import { ActionTile, AgentAvatar } from "@okayed/design/okayed";
+import { ActionTile, AgentAvatar, agentName } from "@okayed/design/okayed";
 import { Button } from "@okayed/design/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@okayed/design/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@okayed/design/ui/dialog";
 import { Input } from "@okayed/design/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@okayed/design/ui/item";
 import { Spinner } from "@okayed/design/ui/spinner";
 import { DEFAULT_POSTURE, type Rule } from "@okayed/engine";
-import { CopyIcon, KeyRoundIcon, PlugIcon, ScanFaceIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, ScanFaceIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Page, Section } from "../components/page";
 import { useOkayed } from "../lib/okayed";
 import { passkeyName, passkeysSupported, setUpPasskey } from "../lib/passkey";
 
-const POSTURES: { name: string; text: string; rules: Rule[]; tone: "deploy" | "merge" | "read" }[] = [
-  { name: "Balanced", text: "Reads, comments, checked merges and staging deploys go ahead. Production and money ask.", rules: DEFAULT_POSTURE, tone: "deploy" },
+const PRESETS: { name: string; text: string; rules: Rule[]; tone: "deploy" | "merge" | "read" }[] = [
+  { name: "Balanced", text: "Reads, comments, merges with passing checks and staging deploys are allowed. Production and money ask you.", rules: DEFAULT_POSTURE, tone: "deploy" },
   {
     name: "Cautious",
-    text: "Only reading goes ahead. Everything else asks you.",
+    text: "Only reading is allowed. Everything else asks you.",
     rules: [
-      { id: "cautious:read", effect: "allow", act: "github.read", note: "reading goes ahead" },
+      { id: "cautious:read", effect: "allow", act: "github.read", note: "reading is allowed" },
       { id: "cautious:spend", effect: "ask", act: "spend.money", note: "spending asks" },
     ],
     tone: "merge",
   },
-  { name: "Ask for everything", text: "No policies. Every action asks you.", rules: [], tone: "read" },
+  { name: "Ask for everything", text: "No rules. Every action asks you.", rules: [], tone: "read" },
 ];
 
 export function SettingsView() {
@@ -35,7 +36,7 @@ export function SettingsView() {
     setBusy(true);
     try {
       await setUpPasskey(okayed.session);
-      toast.success(`${passkeyName()} is ready for approvals.`);
+      toast.success(`${passkeyName()} is ready.`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -43,9 +44,9 @@ export function SettingsView() {
     }
   };
   return (
-    <Page title="Settings" description="How you approve, where you start from, and which agents can ask.">
+    <Page title="Settings" description="How you allow things, which rules you start from, and which agents can ask.">
       <div className="space-y-10">
-        <Section title="Approving with Face ID" description="A passkey on this device signs each approval. The signature is bound to exactly what you approved and travels with the grant.">
+        <Section title="Face ID" description="A passkey on this device signs each thing you allow. The signature covers exactly that request and travels with the permission, so anyone can check it later.">
           <div className="space-y-2">
             {snap.passkeys.map((p) => (
               <Item key={p.id} variant="outline" className="bg-card">
@@ -60,14 +61,14 @@ export function SettingsView() {
             {passkeysSupported() ? (
               <Button variant={snap.passkeys.length ? "outline" : "default"} onClick={setUp} disabled={busy}>{busy ? <Spinner /> : <ScanFaceIcon />}{snap.passkeys.length ? "Add another passkey" : `Set up ${passkeyName()}`}</Button>
             ) : (
-              <p className="text-muted-foreground text-sm">This browser can't create passkeys, so approvals here are a plain tap.</p>
+              <p className="text-muted-foreground text-sm">This browser can't create passkeys, so allowing here is a plain tap.</p>
             )}
           </div>
         </Section>
 
-        <Section title="Starting posture" description="Replace your policies with a preset. You can change any of them afterwards.">
+        <Section title="Presets" description="Start over from a preset. It replaces your rules, and you can change any of them afterwards.">
           <div className="grid gap-3 md:grid-cols-3">
-            {POSTURES.map((p) => (
+            {PRESETS.map((p) => (
               <button
                 key={p.name}
                 type="button"
@@ -82,13 +83,13 @@ export function SettingsView() {
           </div>
         </Section>
 
-        <Section title="Agents" description="Agents that may ask okayed for permission. Assistant is the demo's assistant; connect your own over MCP." action={<ConnectAgent />}>
+        <Section title="Agents" description="Agents that can ask you for permission. The assistant is the one in Chat; connect your own over MCP." action={<ConnectAgent />}>
           <div className="space-y-2">
             {[...new Set(["agent:assistant", ...snap.targets.agents, ...snap.agents.map((a) => a.id)])].map((id) => (
               <Item key={id} variant="outline" className="bg-card">
                 <ItemMedia><AgentAvatar agent={id} /></ItemMedia>
                 <ItemContent>
-                  <ItemTitle>{id.replace(/^agent:/, "")}</ItemTitle>
+                  <ItemTitle>{agentName(id)}</ItemTitle>
                   <ItemDescription>{snap.agents.some((a) => a.id === id) ? "Connected with a token" : "The demo assistant in Chat"}</ItemDescription>
                 </ItemContent>
                 {snap.agents.some((a) => a.id === id) && (
@@ -100,16 +101,24 @@ export function SettingsView() {
         </Section>
 
         <Section title="Account">
-          <dl className="grid gap-x-6 gap-y-2 rounded-2xl border bg-card p-4 text-sm md:grid-cols-[max-content_1fr]">
-            <dt className="text-muted-foreground">User</dt>
-            <dd className="break-all font-mono text-xs">{snap.userId}</dd>
-            <dt className="text-muted-foreground">Issuer key</dt>
-            <dd className="break-all font-mono text-xs">{snap.issuer}</dd>
-            <dt className="text-muted-foreground">Server</dt>
-            <dd className="break-all font-mono text-xs">{okayed.session.api}</dd>
-            <dt className="text-muted-foreground">Drafting</dt>
-            <dd>{snap.drafter}</dd>
-          </dl>
+          <Collapsible className="group rounded-2xl border bg-card">
+            <CollapsibleTrigger className="flex w-full items-center gap-2 p-4 text-left font-medium text-sm">
+              Advanced
+              <ChevronRightIcon className="ml-auto size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <dl className="grid gap-x-6 gap-y-2 px-4 pb-4 text-sm md:grid-cols-[max-content_1fr]">
+                <dt className="text-muted-foreground">User id</dt>
+                <dd className="break-all font-mono text-xs">{snap.userId}</dd>
+                <dt className="text-muted-foreground">Signing key</dt>
+                <dd className="break-all font-mono text-xs">{snap.issuer}</dd>
+                <dt className="text-muted-foreground">Server</dt>
+                <dd className="break-all font-mono text-xs">{okayed.session.api}</dd>
+                <dt className="text-muted-foreground">Reads your words with</dt>
+                <dd>{snap.drafter}</dd>
+              </dl>
+            </CollapsibleContent>
+          </Collapsible>
           <Button variant="ghost" className="text-muted-foreground" onClick={okayed.signOut}>Sign out on this device</Button>
         </Section>
       </div>
@@ -134,7 +143,7 @@ function ConnectAgent() {
         </DialogHeader>
         {!minted ? (
           <form className="flex gap-2" onSubmit={async (e) => (e.preventDefault(), setMinted((await okayed.run<{ id: string; token: string }>("POST", "/agents", { name })) ?? null))}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name, e.g. buzz" aria-label="Agent name" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name, e.g. ci-bot" aria-label="Agent name" />
             <Button type="submit" disabled={!name.trim()}>Connect</Button>
           </form>
         ) : (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decide, narrowPolicy } from "../src/index.ts";
+import { decide, narrowPolicy, ruleFromRequest } from "../src/index.ts";
 import { NOW, policy, SHA, targets } from "./fixtures.ts";
 
 const PR = `github:adrianmross/okayed/pull/182@${SHA}`;
@@ -118,5 +118,38 @@ describe("narrowPolicy: drafts that go further than the words", () => {
 
   it("asks when the sentence has no effect word", () => {
     expect(run("github stuff", [{ effect: "allow", act: "github.read" }]).kind).toBe("question");
+  });
+});
+
+describe("narrowPolicy: the app's own suggestions", () => {
+  it("reads “always allow merges in okayed for 2 weeks, up to 30 merges” as one bounded rule", () => {
+    const r = rules("Always allow merges in okayed for 2 weeks, up to 30 merges", [{ effect: "allow", act: "github.pr.merge", ttl: 14 * DAY }]);
+    expect(r.rules).toHaveLength(1);
+    expect(r.rules[0]).toMatchObject({ effect: "allow", act: "github.pr.merge", res: "github:adrianmross/okayed/**", until: NOW + 14 * DAY, budget: { uses: 30 } });
+  });
+});
+
+describe("ruleFromRequest", () => {
+  const sha = "a".repeat(40);
+  it("turns a merge into the narrowest standing rule: same agent, same repo, same conditions", () => {
+    expect(ruleFromRequest({ act: "github.pr.merge", res: [`github:adrianmross/okayed/pull/182@${sha}`], aud: "agent:assistant", when: [{ c: "checks.pass" }] }, "r1")).toEqual({
+      id: "r1",
+      effect: "allow",
+      act: "github.pr.merge",
+      res: "github:adrianmross/okayed/**",
+      agent: "agent:assistant",
+      when: [{ c: "checks.pass" }],
+    });
+  });
+  it("keeps a deploy to its site and environment, and a purchase to its exact amount", () => {
+    expect(ruleFromRequest({ act: "site.deploy", res: ["site:openmeadow.org/production"] }, "r2").res).toBe("site:openmeadow.org/production");
+    expect(ruleFromRequest({ act: "spend.money", res: ["money:card-1/USD/12"] }, "r3").res).toBe("money:card-1/USD/12");
+  });
+  it("covers the next request like it, and nothing broader", () => {
+    const rule = ruleFromRequest({ act: "github.pr.merge", res: [`github:adrianmross/okayed/pull/182@${sha}`], aud: "agent:assistant" }, "r4");
+    const policy = { layers: [{ name: "you", default: "ask" as const, rules: [rule] }] };
+    expect(decide(policy, "github.pr.merge", `github:adrianmross/okayed/pull/183@${"b".repeat(40)}`, 0, { agent: "agent:assistant" }).verdict).toBe("allow");
+    expect(decide(policy, "github.pr.merge", `github:adrianmross/matrix/pull/1@${sha}`, 0, { agent: "agent:assistant" }).verdict).toBe("ask");
+    expect(decide(policy, "github.pr.merge", `github:adrianmross/okayed/pull/183@${sha}`, 0, { agent: "agent:other" }).verdict).toBe("ask");
   });
 });

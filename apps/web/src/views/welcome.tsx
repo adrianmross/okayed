@@ -32,14 +32,14 @@ export function Welcome({ onSession }: { onSession: (s: Session) => void }) {
       <div className="space-y-3">
         <h1 className="font-semibold text-4xl leading-[1.1] md:text-5xl">Your okay,<br />made exact.</h1>
         <p className="text-lg text-muted-foreground">
-          Chat with Assistant, an assistant that can merge, deploy and buy things. Whenever it needs permission, okayed shows you exactly what it would do, and you approve with Face ID. Standing policies handle the rest.
+          Chat with an assistant that can merge, deploy and buy things. Whenever it needs permission, okayed shows you exactly what it would do, and you allow it with Face ID. Your rules handle the rest.
         </p>
       </div>
       <ul className="space-y-3">
         {[
-          ["merge", "Ask for anything. Assistant's tool calls show up right in the chat."],
-          ["policy", "Approve one exact thing: this PR, this commit, once, for fifteen minutes."],
-          ["deploy", "Or set a policy, the way you'd build a Shortcut, and let it go ahead."],
+          ["merge", "Ask for anything. The assistant's tool calls show up right in the chat."],
+          ["policy", "Allow one exact thing: this PR, this commit, once, for fifteen minutes."],
+          ["deploy", "Or set a rule, the way you'd build a Shortcut, and let it handle the rest."],
         ].map(([tone, text]) => (
           <li key={tone} className="flex items-center gap-3">
             <ActionTile tone={tone as "merge"} act={tone === "merge" ? "github.pr.merge" : tone === "deploy" ? "site.deploy" : undefined} size="sm" />

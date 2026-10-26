@@ -22,13 +22,13 @@ import { useRoute, type Route } from "./lib/route";
 import { loadSession, saveSession, type Session } from "./lib/session";
 import { ActivityView } from "./views/activity";
 import { ChatView } from "./views/chat";
-import { PoliciesView } from "./views/policies";
+import { RulesView } from "./views/rules";
 import { SettingsView } from "./views/settings";
 import { Welcome } from "./views/welcome";
 
 const NAV: { route: Route; label: string; icon: typeof MessageCircleIcon }[] = [
   { route: "chat", label: "Chat", icon: MessageCircleIcon },
-  { route: "policies", label: "Policies", icon: ShieldCheckIcon },
+  { route: "rules", label: "Rules", icon: ShieldCheckIcon },
   { route: "activity", label: "Activity", icon: ActivityIcon },
   { route: "settings", label: "Settings", icon: Settings2Icon },
 ];
@@ -60,7 +60,7 @@ function Shell() {
   const [route, go] = useRoute();
   const { snap } = useOkayed();
   const waiting = snap?.cards.filter((c) => c.status === "open" && (c.kind === "grant" || c.kind === "policy")).length ?? 0;
-  const View = { chat: ChatView, policies: PoliciesView, activity: ActivityView, settings: SettingsView }[route];
+  const View = { chat: ChatView, rules: RulesView, activity: ActivityView, settings: SettingsView }[route];
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon" variant="inset">
@@ -89,9 +89,9 @@ function Shell() {
         </SidebarContent>
         <SidebarFooter className="group-data-[collapsible=icon]:hidden">
           {snap?.paused ? (
-            <Badge variant="secondary" className="justify-center bg-deny/12 py-1 text-deny">Auto-approval paused</Badge>
+            <Badge variant="secondary" className="justify-center bg-deny/12 py-1 text-deny">Rules paused</Badge>
           ) : (
-            <p className="px-2 text-muted-foreground text-xs leading-relaxed">Every action an agent takes here is simulated. The approvals and grants are real.</p>
+            <p className="px-2 text-muted-foreground text-xs leading-relaxed">Every action an agent takes here is simulated. The permissions are real.</p>
           )}
         </SidebarFooter>
       </Sidebar>

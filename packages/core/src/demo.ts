@@ -125,7 +125,7 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
           simulated: true,
           summary: spec.done(input),
           grant: g.id,
-          approvedBy: g.assurance.method === "policy" ? `your policy (${(g.assurance.policy ?? []).join(", ")})` : g.assurance.method === "webauthn" ? "you, with Face ID" : "you",
+          approvedBy: g.assurance.method === "policy" ? `your rules (${(g.assurance.policy ?? []).join(", ")})` : g.assurance.method === "webauthn" ? "you, with Face ID" : "you",
           receipt: used.receipt?.id,
           left: used.left,
         };
@@ -133,7 +133,7 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
     });
   }
   tools.propose_policy = tool({
-    description: "Propose a standing policy in the person's words, e.g. 'let assistant merge anything in okayed for 2 weeks'. The person reviews and applies it; you can't change policy yourself.",
+    description: "Suggest a rule in the person's words, e.g. 'always allow merges in okayed for 2 weeks'. The person reviews and adds it; you can't change their rules yourself.",
     inputSchema: z.object({ sentence: z.string().max(400) }),
     execute: async ({ sentence }: { sentence: string }) => {
       const card = await b.proposePolicy(sentence);
@@ -147,17 +147,17 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
     const parsed = spec.input.safeParse(toolCall.input);
     if (!parsed.success) return { type: "denied", reason: "the request wasn't well formed" };
     const r = await b.request({ act: spec.act, res: [spec.res(parsed.data)], why: spec.why(parsed.data), ref: toolCall.toolCallId });
-    if (r.status === "approving" || r.status === "granted") return { type: "approved", reason: "your standing policy allows this" };
+    if (r.status === "approving" || r.status === "granted") return { type: "approved", reason: "your rules allow this" };
     if (r.status === "pending") return { type: "user-approval", reason: "okayed is asking you" };
     return { type: "denied", reason: r.reason ?? "okayed refused this" };
   };
   return { tools, toolApproval };
 }
 
-export const DEMO_SYSTEM = `You are Assistant, a helpful engineering assistant in a demo of okayed, a service that turns a person's okay into an exact, signed, expiring grant.
-You can read repositories, comment on and merge pull requests, deploy sites and buy things, but only through your tools. Every tool call is checked by okayed: it may go ahead under the person's policy, ask the person (who approves with Face ID), or be refused. All actions are simulated; say so briefly when you report a result.
+export const DEMO_SYSTEM = `You are a helpful engineering assistant in a demo of okayed, a service that turns a person's okay into an exact, signed, expiring permission.
+You can read repositories, comment on and merge pull requests, deploy sites and buy things, but only through your tools. Every tool call is checked by okayed: the person's rules may allow it, ask the person (who allows it with Face ID), or block it. All actions are simulated; say so briefly when you report a result.
 Rules: use a tool whenever the person asks you to do something; never claim something happened unless the tool result says done: true; if a tool was refused or not approved, say so plainly and don't retry. Repos default to owner adrianmross. Keep replies to one or two short sentences.
-If the person describes a standing rule ("let assistant merge anything in okayed for two weeks", "never deploy to production"), call propose_policy with their sentence.`;
+If the person describes a rule ("always allow merges in okayed for two weeks", "never deploy to production"), call propose_policy with their sentence.`;
 
 // ---------- a scripted model, for running without Workers AI ----------
 
@@ -187,9 +187,9 @@ export function scriptedStep(prompt: LanguageModelV4Prompt): Step {
     if (out.type === "error-text") return { text: `I couldn't: ${out.value}` };
     if (out.type === "json" && out.value && typeof out.value === "object") {
       const v = out.value as Record<string, unknown>;
-      if (v.done === true) return { text: `Done: ${v.summary} This was simulated, approved by ${v.approvedBy}; the grant is now used up.` };
+      if (v.done === true) return { text: `Done: ${v.summary} This was simulated, allowed by ${v.approvedBy}; the permission is now used up.` };
       if (v.done === false) return { text: `I couldn't: ${v.reason}.` };
-      if ("proposed" in v) return { text: v.proposed ? `Here's the policy I'd set: ${v.summary} Review it and apply it if it looks right.` : `${v.summary}` };
+      if ("proposed" in v) return { text: v.proposed ? `Here's the rule I'd add: ${v.summary} Add it if it looks right.` : `${v.summary}` };
     }
     return { text: "That didn't work." };
   }
@@ -220,7 +220,7 @@ export function scriptedStep(prompt: LanguageModelV4Prompt): Step {
   }
   if (a.acts.includes("github.read")) return { tool: "read_repository", input: { repo } };
   if (/\b(hi|hello|hey|help|what can you)\b/.test(t)) {
-    return { text: "Hi, I'm Assistant. Ask me to merge a pull request, deploy a site, comment, or buy something. okayed decides whether each one goes ahead, asks you, or is refused." };
+    return { text: "Hi! Ask me to merge a pull request, deploy a site, comment, or buy something. Your rules decide whether each one is allowed, asks you, or is blocked." };
   }
   return { text: "I can read repos, comment on and merge pull requests, deploy sites, and buy things. Each one goes through okayed first. What should I do?" };
 }

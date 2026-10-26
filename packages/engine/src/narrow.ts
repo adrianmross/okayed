@@ -137,7 +137,7 @@ function capped(l: Limit, beyond: Beyond[]): number {
 
 function lifetime(spec: ActionSpec, a: Anchors, p: Proposal, decision: Decision, beyond: Beyond[]): number {
   const caps: [number, string][] = [[spec.maxTtl, `${spec.verb} grants last at most ${shortDuration(spec.maxTtl)}`]];
-  if (decision.caps.ttl !== undefined) caps.push([decision.caps.ttl, `your policy caps this at ${shortDuration(decision.caps.ttl)}`]);
+  if (decision.caps.ttl !== undefined) caps.push([decision.caps.ttl, `your rule caps this at ${shortDuration(decision.caps.ttl)}`]);
   const start: [number, string] = a.ttl !== undefined ? [a.ttl, `you said ${shortDuration(a.ttl)}`] : [spec.ttl, `the shortest reasonable lifetime for ${spec.verb} is ${shortDuration(spec.ttl)}`];
   const ttl = capped({ start, caps, asked: p.ttl, said: a.ttl, floor: 60, field: "ttl", label: shortDuration }, beyond);
   if (a.unbounded) beyond.push({ field: "ttl", asked: "no expiry", granted: shortDuration(ttl), why: "every grant expires" });
@@ -146,7 +146,7 @@ function lifetime(spec: ActionSpec, a: Anchors, p: Proposal, decision: Decision,
 
 function useCount(spec: ActionSpec, a: Anchors, p: Proposal, decision: Decision, beyond: Beyond[]): number {
   const caps: [number, string][] = [[spec.maxUses, `${spec.verb} grants allow at most ${usesLabel(spec.maxUses)}`]];
-  if (decision.caps.uses !== undefined) caps.push([decision.caps.uses, `your policy allows ${usesLabel(decision.caps.uses)}`]);
+  if (decision.caps.uses !== undefined) caps.push([decision.caps.uses, `your rule allows ${usesLabel(decision.caps.uses)}`]);
   const start: [number, string] = a.uses !== undefined ? [a.uses, `you said ${usesLabel(a.uses)}`] : [spec.uses, `${spec.verb} grants default to ${usesLabel(spec.uses)}`];
   return capped({ start, caps, asked: p.uses, said: a.uses, floor: 1, field: "uses", label: usesLabel }, beyond);
 }

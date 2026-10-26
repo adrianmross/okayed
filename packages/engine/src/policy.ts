@@ -103,7 +103,7 @@ export function decideLayer(layer: Layer, act: string, res: string, now: Unix, c
     const why = best.note ?? `rule "${best.id}" says ${best.effect}`;
     if (best.effect !== "allow") return { layer: layer.name, verdict: best.effect, rule: best, why };
     const { left, fits } = budgetLeft(best, ctx.usage, ctx.cost ?? riskCost(act, [res]));
-    const v: LayerVerdict = { layer: layer.name, verdict: fits ? "allow" : "ask", rule: best, why: fits ? why : `${why}, but its budget is spent` };
+    const v: LayerVerdict = { layer: layer.name, verdict: fits ? "allow" : "ask", rule: best, why: fits ? why : `${why}, but its limit is used up` };
     if (left) v.left = left;
     if (!fits) v.spent = true;
     return v;
@@ -118,7 +118,7 @@ function sentence(v: LayerVerdict, act: string): string {
     case "deny":
       return `Refused by ${v.layer}: ${v.why}.`;
     case "ask":
-      return `Needs your okay (${v.layer}: ${v.why}).`;
+      return `Asks you (${v.layer}: ${v.why}).`;
     default:
       return `Allowed: every layer lets the agent ${verb} this.`;
   }
@@ -152,7 +152,7 @@ export function decide(policy: Policy, act: string, res: string, now: Unix, ctx:
   // Every layer said yes; a shared pool that can't cover this use still turns it into a question.
   const dry = pools.find((b) => !budgetLeft({ id: `budget:${b.id}`, effect: "allow", act, budget: b }, ctx.usage, cost).fits);
   if (dry) {
-    return { verdict: "ask", reason: `Needs your okay: the shared budget “${dry.note ?? dry.id}” is spent.`, decidedBy: `budget:${dry.id}`, layers, caps, ...none, spent: `budget:${dry.id}` };
+    return { verdict: "ask", reason: `Asks you: the limit “${dry.note ?? dry.id}” is used up.`, decidedBy: `budget:${dry.id}`, layers, caps, ...none, spent: `budget:${dry.id}` };
   }
   const charges = [
     ...voting.filter((v) => v.rule).map((v) => ({ key: v.rule!.id, cost })),

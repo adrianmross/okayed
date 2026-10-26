@@ -213,7 +213,7 @@ describe("narrowGrant: policy", () => {
     const p: Policy = { layers: [{ name: "you", default: "ask", rules: [{ id: "c", effect: "ask", act: "site.deploy", maxTtl: 120 }] }] };
     const r = grant(run("deploy openmeadow to staging for an hour", {}, { requests: [], policy: p }));
     expect(r.draft.exp - r.draft.nbf).toBe(120);
-    expect(r.beyond[0]).toMatchObject({ field: "ttl", why: expect.stringMatching(/policy caps/) });
+    expect(r.beyond[0]).toMatchObject({ field: "ttl", why: expect.stringMatching(/rule caps/) });
   });
 
   it("reports auto-approval in the decision", () => {

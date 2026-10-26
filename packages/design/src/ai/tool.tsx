@@ -16,7 +16,7 @@ export const Tool = ({ className, ...props }: ComponentProps<typeof Collapsible>
 );
 
 const LABELS: Record<ToolState, string> = {
-  "approval-requested": "Needs your okay",
+  "approval-requested": "Waiting for you",
   "approval-responded": "Okayed",
   "input-available": "Running",
   "input-streaming": "Preparing",

@@ -24,7 +24,7 @@ export const ACTIONS: Record<string, ActionMeta> = {
 };
 
 export const ANY_ACTION: ActionMeta = { act: "*", title: "Anything", verb: "do", noun: "anything", icon: SparklesIcon, tone: "any" };
-export const POLICY_ACTION: ActionMeta = { act: "policy", title: "Change a policy", verb: "change", noun: "changing policies", icon: ShieldCheckIcon, tone: "policy" };
+export const POLICY_ACTION: ActionMeta = { act: "policy", title: "Change a rule", verb: "change", noun: "changing rules", icon: ShieldCheckIcon, tone: "policy" };
 
 export function actionMeta(act: string): ActionMeta {
   if (ACTIONS[act]) return ACTIONS[act];

@@ -2,8 +2,9 @@ import { MoreHorizontalIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "../lib/utils";
 import { actionMeta } from "./actions";
+import { VERDICT } from "./primitives";
 
-export interface PolicyTileProps extends ComponentProps<"button"> {
+export interface RuleTileProps extends ComponentProps<"button"> {
   act: string;
   title: string;
   subtitle: string;
@@ -11,10 +12,9 @@ export interface PolicyTileProps extends ComponentProps<"button"> {
   spent?: boolean;
 }
 
-const EFFECT = { allow: "Goes ahead", ask: "Asks you", deny: "Never" };
 
-/** A policy in the library, as Shortcuts shows a shortcut: a colour, an icon, a name, and what it does. */
-export function PolicyTile({ act, title, subtitle, effect, spent, className, ...props }: PolicyTileProps) {
+/** A rule in the library, as Shortcuts shows a shortcut: a colour, an icon, a name, and what it does. */
+export function RuleTile({ act, title, subtitle, effect, spent, className, ...props }: RuleTileProps) {
   const meta = actionMeta(act);
   const Icon = meta.icon;
   return (
@@ -30,7 +30,7 @@ export function PolicyTile({ act, title, subtitle, effect, spent, className, ...
       <span className="flex items-start justify-between">
         <Icon className="size-6" strokeWidth={2.2} />
         <span className="flex items-center gap-1">
-          <span className={cn("rounded-full bg-white/20 px-2 py-0.5 font-medium text-[11px] backdrop-blur-sm", spent && "bg-black/25")}>{spent ? "Budget spent" : EFFECT[effect]}</span>
+          <span className={cn("rounded-full bg-white/20 px-2 py-0.5 font-medium text-[11px] backdrop-blur-sm", spent && "bg-black/25")}>{spent ? "Limit reached" : VERDICT[effect].label}</span>
           <MoreHorizontalIcon className="size-5 opacity-70" />
         </span>
       </span>
@@ -43,7 +43,7 @@ export function PolicyTile({ act, title, subtitle, effect, spent, className, ...
 }
 
 /** The "+" tile at the end of the library. */
-export function NewPolicyTile({ className, children = "New policy", ...props }: ComponentProps<"button">) {
+export function NewRuleTile({ className, children = "New rule", ...props }: ComponentProps<"button">) {
   return (
     <button
       type="button"
