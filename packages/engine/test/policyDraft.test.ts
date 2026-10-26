@@ -122,6 +122,12 @@ describe("narrowPolicy: drafts that go further than the words", () => {
 });
 
 describe("narrowPolicy: the app's own suggestions", () => {
+  it("keeps “never deploy to production” to production: “never” is the effect, not a negated place", () => {
+    const r = rules("never deploy to production", [{ effect: "deny", act: "site.deploy" }]);
+    expect(r.rules.map((x) => [x.effect, x.act, x.res])).toEqual([["deny", "site.deploy", "site:*/production"]]);
+    expect(rules("allow deploys, but not to production", [{ effect: "allow", act: "site.deploy" }]).rules[0]?.res).not.toBe("site:*/production");
+  });
+
   it("reads “always allow merges in okayed for 2 weeks, up to 30 merges” as one bounded rule", () => {
     const r = rules("Always allow merges in okayed for 2 weeks, up to 30 merges", [{ effect: "allow", act: "github.pr.merge", ttl: 14 * DAY }]);
     expect(r.rules).toHaveLength(1);

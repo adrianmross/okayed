@@ -217,7 +217,9 @@ export function policyClauses(utterance: string, targets: Targets): PolicyClause
     if (/\bgithub\b/.test(text) && acts.length === 0) acts = ["github.*"];
     if (/\bread-only\b|\bread only\b/.test(text)) acts = ["github.read"];
     const everything = acts.length === 0 && /\b(?:anything|everything|all|any action)\b/.test(text);
-    const clause: PolicyClause = { text, acts, everything, repos: a.repos, sites: a.sites, envs: a.envs, agents: a.agents, conditions: a.conditions, unbounded: a.unbounded };
+    // In "never deploy to production", "never" is the rule's effect, not a negated place: block rules keep it as scope.
+    const envs = effect === "deny" ? uniq([...a.envs, ...a.negatedEnvs]) : a.envs;
+    const clause: PolicyClause = { text, acts, everything, repos: a.repos, sites: a.sites, envs, agents: a.agents, conditions: a.conditions, unbounded: a.unbounded };
     if (effect) clause.effect = effect;
     if (a.ttl !== undefined) clause.ttl = a.ttl;
     if (a.uses !== undefined) clause.uses = a.uses;
