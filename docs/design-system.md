@@ -90,9 +90,46 @@ From top to bottom:
 5. "Left out of this request": a collapsible list of what was cut from the model's draft.
 6. One decision: a full-width **Allow once** with the Face ID glyph; **Always allow…**, which opens the rule editor
    with the narrowest rule that covers requests like this one; a quiet **Don't allow**; and a link to allow without
-   Face ID.
+   Face ID. `layout`, `flow` and `actions` change how the decision looks and how it's made (below).
 
 Once allowed, the seal presses down.
+
+### Approval actions — `ApprovalActions`, `SlideToConfirm`, `HoldSlide`
+
+The decision area comes in configurations, so each implementation picks the one that fits and can build its own on
+top. `ApprovalCard` takes the same props and passes them through, or takes `actions` to replace the area entirely.
+
+| | `flow="tap"` (default) | `flow="swipe"` | `flow="hold"` |
+|---|---|---|---|
+| **Allow once** | a button | slide to allow | a button |
+| **Always allow…**, **Block…** | buttons that open the rule editor | buttons that open the rule editor | tap to open the editor, or hold and slide to make the rule at once |
+| **Don't allow** | a button | a button | a button |
+
+`layout="stack"` (default) puts the main decision full width with the others under it; `layout="row"` puts them in
+one row: Don't allow · Block… · Always allow… · Allow once, wrapping on narrow cards.
+
+**Hold and slide.** Press and hold **Always allow…** (or **Block…**). A ladder of durations appears above it: 1 hour,
+1 day, 1 week, 30 days, Always. Slide up to climb it, one rung per 28 px, then slide across: the track fills, and
+reaching the end makes the rule. Let go early and nothing happens. Once the swipe is under way the rung stays put, so
+moving sideways can't change it. A quick tap is still a tap. With the keyboard, the arrows climb the ladder, Enter
+confirms and Escape cancels. The step logic is a pure function, `readHoldSlide`, so other implementations can reuse
+it with their own visuals.
+
+**Slide to confirm.** Drag the knob all the way across; let go early and it springs back. Enter or Space confirms,
+and the arrows move the knob a quarter at a time. Motion is off under `prefers-reduced-motion`.
+
+The callbacks say what happened:
+
+| Callback | Means |
+|---|---|
+| `onApprove()` | Allow this one request. |
+| `onApprovePlain()` | Allow it without Face ID. |
+| `onDeny()` | Don't allow it. |
+| `onAlwaysAllow()` | Tapped: open the rule editor. |
+| `onAlwaysAllow(seconds)` / `onAlwaysAllow(null)` | Held and slid: allow requests like this one for that long, or with no end. |
+| `onBlock()`, `onBlock(seconds)`, `onBlock(null)` | The same, for a rule that blocks them. |
+
+`durations` replaces the ladder: any list of `{ label, seconds }`, where `seconds: null` means no end.
 
 ### Receipt — `ReceiptCard`
 
@@ -155,7 +192,9 @@ The approval card and the receipt render directly under the tool call they belon
 ## Accessibility
 
 - Every interactive token, tile and step is a real `button` with a visible focus ring (`--ring`).
-- Decision colours always come with words ("Goes ahead", "Asks you"); colour is never the only signal.
+- Decision colours always come with words ("Allowed", "Asks you"); colour is never the only signal.
+- Every gesture has a keyboard path (arrows, Enter, Escape) and a screen-reader hint, and a hold-and-slide is still a
+  plain button to a tap.
 - Both themes are designed, and the theme follows the system (`followSystemTheme`).
 - The chat is a `role="log"` region; toasts are announced.
 
@@ -176,7 +215,7 @@ Or add the namespace to `components.json` and install by name:
 ```
 
 ```bash
-npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, approval card, receipt, rule tile, rule editor
+npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, actions, approval card, receipt, rule tile, rule editor
 ```
 
 | Item | What |
@@ -184,7 +223,13 @@ npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, appr
 | `okayed-theme` | The tokens, fonts, tile gradients and animations, merged into your CSS. |
 | `okayed-engine` | The policy engine, pure TypeScript. |
 | `okayed-primitives` | Action tiles, avatars, tokens, the seal, verdict pills, steps. |
+| `slide-to-confirm`, `hold-slide` | The two gestures on their own. |
+| `approval-actions` | The decision area in every layout and flow. |
 | `approval-card`, `receipt-card`, `rule-tile`, `rule-editor` | The components, each with the shadcn pieces it needs. |
+| `approval-card-row`, `approval-card-swipe`, `approval-card-hold` | Examples of each configuration, in `components/okayed/examples/`, to start from. |
+
+The playground's **Components** view shows every configuration live, with the calls each decision makes and the
+command that installs it.
 
 ## Adding a shadcn component
 

@@ -34,20 +34,68 @@
       ]
     },
     {
+      "name": "slide-to-confirm",
+      "type": "registry:component",
+      "title": "Slide to confirm",
+      "description": "Drag the knob all the way across to confirm; let go early and it springs back. Enter or Space confirms from the keyboard.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "spinner",
+        "okayed-theme"
+      ],
+      "files": [
+        "src/okayed/slide.tsx"
+      ]
+    },
+    {
+      "name": "hold-slide",
+      "type": "registry:component",
+      "title": "Hold and slide",
+      "description": "Press and hold, slide up to pick how long (1 hour to always), then slide across to confirm. A tap is still a tap; arrows and Enter work from the keyboard.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "okayed-primitives"
+      ],
+      "files": [
+        "src/okayed/hold-slide.tsx"
+      ]
+    },
+    {
+      "name": "approval-actions",
+      "type": "registry:component",
+      "title": "Approval actions",
+      "description": "The decisions on an approval card, in a stack or a row, by tap, swipe or hold-and-slide: Allow once, Always allow…, Block… and Don't allow.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "button",
+        "spinner",
+        "slide-to-confirm",
+        "hold-slide"
+      ],
+      "files": [
+        "src/okayed/approval-actions.tsx"
+      ]
+    },
+    {
       "name": "approval-card",
       "type": "registry:component",
       "title": "Approval card",
-      "description": "Who wants to do exactly what, within which scope, with Allow once, Always allow… and Don't allow.",
+      "description": "Who wants to do exactly what, within which scope, and the decision, in any layout and flow from approval-actions, or your own.",
       "dependencies": [
         "lucide-react"
       ],
       "registryDependencies": [
         "badge",
-        "button",
         "collapsible",
-        "spinner",
         "okayed-primitives",
-        "okayed-engine"
+        "okayed-engine",
+        "approval-actions"
       ],
       "files": [
         "src/okayed/approval.tsx"
@@ -107,6 +155,42 @@
       ]
     },
     {
+      "name": "approval-card-row",
+      "type": "registry:block",
+      "title": "Approval card: one row",
+      "description": "Every decision in one row: Don't allow · Always allow… · Allow once.",
+      "registryDependencies": [
+        "approval-card"
+      ],
+      "files": [
+        "src/okayed/examples/approval-card-row.tsx"
+      ]
+    },
+    {
+      "name": "approval-card-swipe",
+      "type": "registry:block",
+      "title": "Approval card: slide to allow",
+      "description": "The main decision is a slide, so a stray tap can't okay anything.",
+      "registryDependencies": [
+        "approval-card"
+      ],
+      "files": [
+        "src/okayed/examples/approval-card-swipe.tsx"
+      ]
+    },
+    {
+      "name": "approval-card-hold",
+      "type": "registry:block",
+      "title": "Approval card: hold and slide",
+      "description": "Hold Always allow… or Block…, slide up to pick how long the rule lasts, then slide across to make it.",
+      "registryDependencies": [
+        "approval-card"
+      ],
+      "files": [
+        "src/okayed/examples/approval-card-hold.tsx"
+      ]
+    },
+    {
       "name": "okayed",
       "type": "registry:block",
       "title": "Everything okayed",
@@ -115,6 +199,9 @@
         "okayed-theme",
         "okayed-engine",
         "okayed-primitives",
+        "slide-to-confirm",
+        "hold-slide",
+        "approval-actions",
         "approval-card",
         "receipt-card",
         "rule-tile",

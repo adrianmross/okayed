@@ -5,7 +5,7 @@
 // (@/components/ui, @/lib/utils, @/components/okayed, @/lib/okayed/engine), and the theme is read from okayed.css.
 // Then people can install them with: npx shadcn add <base-url>/approval-card.json
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -14,12 +14,20 @@ const BASE = (process.argv[3] ?? process.env.OKAYED_REGISTRY_URL ?? "https://oka
 const source = JSON.parse(readFileSync(join(ROOT, "registry.source.json"), "utf8"));
 const OWN = new Set(source.items.map((i) => i.name));
 
-/** Component imports, from this package's layout to shadcn's aliases. */
-function componentImports(code) {
+const SRC = join(ROOT, "src");
+
+/** Where a file of this package lands in a shadcn app, relative to its root (src/okayed/x.tsx → components/okayed/x.tsx). */
+const target = (file) => `components/${relative(SRC, file)}`;
+
+/** Component imports, from this package's layout to shadcn's aliases: relative paths resolve, then map by folder. */
+function componentImports(code, file) {
   return code
-    .replace(/from "\.\.\/ui\/([\w-]+)"/g, 'from "@/components/ui/$1"')
-    .replace(/from "\.\.\/lib\/utils"/g, 'from "@/lib/utils"')
-    .replace(/from "\.\/([\w-]+)"/g, 'from "@/components/okayed/$1"')
+    .replace(/from "(\.\.?\/[\w./-]+)"/g, (whole, spec) => {
+      const to = relative(SRC, resolve(dirname(file), spec));
+      if (to === "lib/utils") return 'from "@/lib/utils"';
+      if (to.startsWith("ui/") || to.startsWith("okayed/")) return `from "@/components/${to}"`;
+      return whole;
+    })
     .replace(/from "@okayed\/engine"/g, 'from "@/lib/okayed/engine"');
 }
 
@@ -34,12 +42,10 @@ function files(item) {
       .sort()
       .map((f) => ({ path: `${item.target}/${f}`, type: "registry:lib", target: `${item.target}/${f}`, content: libImports(readFileSync(join(dir, f), "utf8")) }));
   }
-  return (item.files ?? []).map((p) => ({
-    path: `components/okayed/${basename(p)}`,
-    type: "registry:component",
-    target: `components/okayed/${basename(p)}`,
-    content: componentImports(readFileSync(join(ROOT, p), "utf8")),
-  }));
+  return (item.files ?? []).map((p) => {
+    const file = join(ROOT, p);
+    return { path: target(file), type: "registry:component", target: target(file), content: componentImports(readFileSync(file, "utf8"), file) };
+  });
 }
 
 // ---------- the theme, from okayed.css ----------

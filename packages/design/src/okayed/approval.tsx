@@ -1,12 +1,12 @@
 import { humanDuration, labelRes, parseRes, type Beyond, type Condition, type Risk } from "@okayed/engine";
-import { CheckIcon, ChevronRightIcon, RepeatIcon, ScanFaceIcon, ScissorsIcon } from "lucide-react";
-import { useState } from "react";
+import { ChevronRightIcon, ScissorsIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
-import { Spinner } from "../ui/spinner";
 import { cn } from "../lib/utils";
 import { actionMeta } from "./actions";
+import { ApprovalActions, type ApprovalFlow, type ApprovalLayout } from "./approval-actions";
+import type { HoldStep } from "./hold-slide";
 import { ActionTile, AgentAvatar, Seal, Token, agentName } from "./primitives";
 
 export type ApprovalState = "pending" | "approving" | "approved" | "denied" | "expired";
@@ -27,9 +27,18 @@ export interface ApprovalCardProps {
   approvedVia?: string;
   onApprove: () => void;
   onApprovePlain?: () => void;
-  /** "Always allow…": turn this request into a rule. */
-  onAlwaysAllow?: () => void;
+  /** "Always allow…": with no argument, open the rule editor; from a hold-and-slide, seconds (null: no end). */
+  onAlwaysAllow?: (forSeconds?: number | null) => void;
+  /** "Block…": the same, for a rule that blocks requests like this one. */
+  onBlock?: (forSeconds?: number | null) => void;
   onDeny: () => void;
+  /** How the decisions are laid out and how they're made. Defaults: "stack" and "tap". */
+  layout?: ApprovalLayout;
+  flow?: ApprovalFlow;
+  /** The ladder for a hold-and-slide. */
+  durations?: HoldStep[];
+  /** Replaces the decision area entirely, for implementations that build their own. */
+  actions?: ReactNode;
   className?: string;
 }
 
@@ -127,23 +136,21 @@ export function ApprovalCard(p: ApprovalCardProps) {
       </div>
       <div className="p-4">
         {p.state === "pending" || p.state === "approving" ? (
-          <div className="space-y-2">
-            <Button size="lg" className="h-12 w-full gap-2 rounded-xl text-[15px]" disabled={p.state === "approving"} onClick={p.onApprove}>
-              {p.state === "approving" ? <Spinner /> : p.passkey === "unsupported" ? <CheckIcon className="size-5" /> : <ScanFaceIcon className="size-5" />}
-              {p.passkey === "setup" ? "Set up Face ID and allow" : p.uses === 1 ? "Allow once" : "Allow"}
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              {p.onAlwaysAllow ? (
-                <Button variant="outline" className="rounded-xl" disabled={p.state === "approving"} onClick={p.onAlwaysAllow}><RepeatIcon />Always allow…</Button>
-              ) : (
-                <span />
-              )}
-              <Button variant="ghost" className="rounded-xl text-muted-foreground" disabled={p.state === "approving"} onClick={p.onDeny}>Don't allow</Button>
-            </div>
-            {p.onApprovePlain && p.passkey !== "unsupported" && (
-              <Button variant="link" size="sm" className="w-full text-muted-foreground" disabled={p.state === "approving"} onClick={p.onApprovePlain}>Allow without Face ID</Button>
-            )}
-          </div>
+          (p.actions ?? (
+            <ApprovalActions
+              layout={p.layout}
+              flow={p.flow}
+              passkey={p.passkey}
+              uses={p.uses}
+              busy={p.state === "approving"}
+              onApprove={p.onApprove}
+              onApprovePlain={p.onApprovePlain}
+              onDeny={p.onDeny}
+              onAlwaysAllow={p.onAlwaysAllow}
+              onBlock={p.onBlock}
+              durations={p.durations}
+            />
+          ))
         ) : p.state === "approved" ? (
           <div className="flex items-center gap-3">
             <Seal className="size-12 [&_svg]:size-10" />
