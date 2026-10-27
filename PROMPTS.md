@@ -201,3 +201,31 @@ You should build it though with local assurance with webauthn now but eventual e
 | `feat(design): publish the design system as a shadcn registry` | The theme, the engine and the components as shadcn registry items, served at `/r/` and checked by installing them into a fresh app with the shadcn CLI. |
 | `feat(core): compare interpreters …`, `fix(engine): …` | Twenty eval cases scored by what the engine does with each draft; any OpenAI-compatible model can draft. The evals found that "never deploy to production" blocked every deploy. |
 | `refactor: …`, `docs: …` | The demo agent is now just "the assistant", the demo uses public repos, and the docs describe ideas instead of unreleased specs. |
+
+## 12 — More Cloudflare
+
+```text
+How can we make this more cloudflare native and utilize more cloudflare resources
+```
+
+The answer proposed, in order: remote MCP on Workers with OAuth, Cloudflare Access sign-in, one Worker serving
+everything as static assets, AI Gateway, Turnstile, rate limiting, Analytics Engine, real deploys with just-in-time
+API tokens, and voice through Whisper, flagging what needs billing (R2) before building any of it.
+
+## 13 — Button configurations, and all of it
+
+One project name in this prompt is redacted.
+
+```text
+I also think we show on the shadcn repo different button configurations so like a row layout or the main with two secondaries as well as flow configs like single tap or swipe to approve and then for the always allow (something which was pretty useful in [redacted] which is as you hold on the button and move slightly up as you’re going up, you can slide through how long it applies and then can swipe all the way through to confirm). The same goes the same for deny. Different implementations can use slightly different configurations of this shadcn repo and add their own on top. Let’s also do all the cf stuff
+```
+
+### What came out of prompts 12–13
+
+| Commit | What |
+|---|---|
+| `feat(design): approval actions in layouts and flows …` | `ApprovalActions` (stacked or in a row; tap, swipe or hold and slide), `SlideToConfirm`, `HoldSlide` with its duration ladder, registry items and an example block per configuration. |
+| `feat(playground): …` | A Components view: every configuration live, with the callback it fires and its install command. |
+| `feat(worker): …` | One Worker serves the site; remote MCP with OAuth and a Connect screen; Access sign-in; Turnstile; rate limits; Analytics Engine; Queues to wake approver apps; an R2 event archive; AI Gateway; Whisper for voice; real Pages deploys with just-in-time API tokens. |
+| `feat(web): …` | Approval buttons in Settings, timed "Always allow" and "Block" rules from hold and slide, voice in the chat, the Connect screen, Access and Turnstile sign-in. |
+| `test: …`, `docs: …`, `ci: …` | OAuth and MCP end to end, queue and archive checks in the smoke test, hold and slide in the browser test; CI and deploy on one Worker. |

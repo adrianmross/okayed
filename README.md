@@ -9,8 +9,10 @@ grant before it acts.
 > minutes.** It does not cover any other PR, a newer commit, a second use, or any other agent.
 
 - **Web demo:** _deployed link goes here_ · **Playground:** _deployed link goes here_
-- Runs on Cloudflare: Workers AI (Llama 3.3), Agents SDK (a Durable Object per user, `AIChatAgent` for the chat),
-  Workflows, and Pages. The core is provider-agnostic, and the components install into any shadcn app.
+- Runs on Cloudflare, as one Worker: Workers AI (Llama 3.3, Whisper), the Agents SDK (a Durable Object per user,
+  `AIChatAgent` for the chat, `McpAgent` for remote MCP), Workflows, Queues, KV, Analytics Engine, rate limiting,
+  Access, Turnstile, AI Gateway and static assets. See [Cloudflare, end to end](#cloudflare-end-to-end). The core is
+  provider-agnostic, and the components install into any shadcn app.
 - MIT licensed. The full prompt history behind this AI-assisted build is in [`PROMPTS.md`](PROMPTS.md).
 
 ## The demo
@@ -25,6 +27,11 @@ nothing real happens. Every tool call still goes through okayed, and the permiss
   requests like this one, and allows this one with the same Face ID.
 - If a rule blocks it, the assistant is refused and says so.
 
+Approval buttons come in two layouts (stacked, or in a row) and three ways to decide: tap, swipe to allow, or
+**hold and slide**. Press Always allow… or Block…, slide up to choose how long the rule lasts (an hour up to always),
+then across to confirm. Pick yours in Settings. You can also **say** what you want: the mic hears you through
+Whisper on Workers AI, and the words land in the box for you to read before sending.
+
 Each conversation has three views: **Chat**, **Receipts** and **Transcript** (every tool input and output, okayed
 request and grant, as data). **Rules** is a library you build like Siri Shortcuts. **Activity** has what's waiting,
 the permissions agents hold right now (take any of them back), and a history of signed receipts.
@@ -36,6 +43,10 @@ the permissions agents hold right now (take any of them back), and a history of 
 | “Always allow…” opens the narrowest rule | Your rules, on a phone |
 |---|---|
 | ![The rule editor, prefilled from a production deploy request](docs/img/demo-always-allow.png) | ![Rule tiles on a phone](docs/img/demo-rules-mobile.png) |
+
+| Hold and slide: up for how long, across to confirm | An MCP client asks to connect |
+|---|---|
+| ![Always allow… held, with the duration ladder on 1 week](docs/img/components-hold.png) | ![The Connect screen for a remote MCP client](docs/img/connect.png) |
 
 **Words.** The app speaks in everyday words. The API, the grant format and the docs keep the IAM ones:
 
@@ -70,7 +81,7 @@ sequenceDiagram
     participant DO as OkayedAgent<br/>(Durable Object per user)
     participant WF as GrantLifecycle<br/>(Workflow)
     participant LLM as Llama 3.3<br/>(Workers AI)
-    participant P as Person (Pages UI)
+    participant P as Person (web app)
     participant T as Tool (GitHub merge)
 
     A->>W: POST /requests {act, res, why}
@@ -173,13 +184,14 @@ packages/design      okayed's design system: tokens, the latest shadcn component
                      okayed's approval card, receipts, rule tiles and Shortcuts-style editor, also served as a
                      shadcn registry (docs/design-system.md)
 packages/client      a dependency-free client for agents: ask, wait, merge
-apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedChat (AIChatAgent), the Workflow,
-                     Workers AI, the HTTP API
-apps/web             Pages: the demo (Chat, Rules, Activity, Settings), React on @okayed/design, and /r/ (the registry)
-apps/playground      Pages: ask your rules, build one, and watch words narrow into a grant; the engine in the browser
+apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedChat (AIChatAgent), OkayedMcp
+                     (remote MCP over OAuth), the Workflow, Workers AI, Access, Queues, the API and the site
+apps/web             the demo (Chat, Rules, Activity, Settings), React on @okayed/design, and /r/ (the registry)
+apps/playground      at /playground: ask your rules, build one, see every component configuration, and watch words
+                     narrow into a grant; the engine in the browser
 apps/mcp             MCP server so any MCP agent asks okayed before acting
 docs/                design notes, grant format, design system
-scripts/             smoke.mjs (API, end to end) and e2e-web.mjs (the demo in a browser, Face ID included)
+scripts/             smoke.mjs (API end to end), mcp-remote.mjs (OAuth and MCP), e2e-web.mjs (the demo in a browser)
 ```
 
 ## Run it locally
@@ -188,21 +200,24 @@ Requires Node 22 and pnpm 10.
 
 ```bash
 pnpm install
-pnpm test                      # engine, grant, core and worker tests
+pnpm test                      # engine, grant, core, client, MCP and worker tests
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars
 # put 64 hex chars in ISSUER_SECRET:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-pnpm dev:local                 # the Worker on :8787, Durable Objects + Workflows, no Cloudflare login
-pnpm dev:web                   # the demo on :5173
-pnpm dev:playground            # the playground on :5174
-pnpm e2e                       # the API end to end, then the demo in a browser with a virtual Face ID
+pnpm build:site                # the web app, the playground (/playground) and the registry (/r), for the Worker
+pnpm dev:local                 # one Worker on :8787 serves all of it, with no Cloudflare login
+pnpm e2e                       # the API, remote MCP over OAuth, then the demo in a browser with a virtual Face ID
 ```
 
-`dev:local` runs every part except Workers AI. The assistant is then played by a scripted model that reads intent with
-okayed's own anchors, and policy drafting uses the model-free `HeuristicDrafter`, so the whole demo works offline.
-To use Llama 3.3, run `wrangler login` and then `pnpm dev:worker`. The model only drafts; okayed still decides.
+Open <http://localhost:8787>. For hot reload while working on the UI, run `pnpm dev:web` (:5173) and
+`pnpm dev:playground` (:5174) next to the Worker.
 
-Face ID works on `localhost`: browsers treat it as a secure context, and the Worker accepts passkeys from the
-origins in `WEB_ORIGINS`.
+`dev:local` runs every part except Workers AI: Durable Objects, the Workflow, OAuth and remote MCP, Queues, R2 and
+the static site are all simulated locally. The assistant is then played by a scripted model that reads intent with
+okayed's own anchors, and drafting uses the model-free `HeuristicDrafter`, so the whole demo works offline. To use
+Llama 3.3 and voice, run `wrangler login` and then `pnpm dev:worker`. The model only drafts; okayed still decides.
+
+Face ID works on `localhost`: browsers treat it as a secure context. Passkeys are bound to the Worker's own origin
+and to any origin in `WEB_ORIGINS`.
 
 ### Talk to it like an agent
 
@@ -234,14 +249,21 @@ The agent never holds the token.
 
 ### Use it from any MCP agent
 
-`apps/mcp` is an MCP server with four tools:
+okayed is a **remote MCP server** at `/mcp`. Add `https://<your okayed>/mcp` to Claude, Cursor or any MCP client. The
+client registers itself and sends you to okayed's Connect screen; allowing it makes the client one of your agents.
+Its OAuth token can ask for permission and use what it's given, and nothing else. Disconnect it in Settings.
+
+The tools:
 
 - `okayed_actions` lists the actions and how to name exact targets.
 - `okayed_request` asks before acting. It returns at once if one of your rules allows the action; otherwise it waits for you.
 - `okayed_status` keeps waiting on a request.
 - `okayed_merge_pr` merges through okayed's tool.
+- `okayed_deploy_site` deploys through okayed's tool (Cloudflare Pages, below).
 
-Grants stay inside the MCP process, so the agent sees what it may do but never holds a credential.
+Grants stay inside okayed (or the MCP process), so the agent sees what it may do but never holds a credential.
+
+For a local agent, `apps/mcp` runs the same tools over stdio with a token from Settings:
 
 ```json
 {
@@ -265,45 +287,70 @@ if (a.status === "granted") await okayed.merge(a.event!, { owner: "adrianmross",
 
 ## Deploy (Cloudflare)
 
-Everything here runs on the free plan: Workers, Durable Objects (SQLite), Workflows, the Workers AI free
-allocation, and Pages.
+Everything runs on the free plan. One command builds the site, creates the queue and deploys the Worker; KV is created
+on first deploy.
 
 ```bash
 cd apps/worker
 npx wrangler login
-npx wrangler deploy
+pnpm run deploy
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" | npx wrangler secret put ISSUER_SECRET
-npx wrangler secret put GITHUB_TOKEN        # optional: fine-grained, PR write on the demo repo only
-
-cd ../..
-VITE_API_BASE=https://okayed.<you>.workers.dev VITE_PLAYGROUND_URL=https://okayed-playground.pages.dev pnpm --filter @okayed/web build
-VITE_WEB_URL=https://okayed.pages.dev pnpm --filter @okayed/playground build
-npx wrangler pages deploy apps/web/dist --project-name okayed
-npx wrangler pages deploy apps/playground/dist --project-name okayed-playground
 ```
 
 Or add the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ISSUER_SECRET` repository secrets and run the
-**deploy** workflow.
+**deploy** workflow. Optional, each off until you set it:
+
+| To | Set |
+|---|---|
+| Sign in with **Cloudflare Access** instead of an owner token | Put an Access application in front of the Worker; vars `ACCESS_TEAM` (your `<team>.cloudflareaccess.com`) and `ACCESS_AUD` (the application's AUD tag) |
+| Check sign-ups with **Turnstile** | Secret `TURNSTILE_SECRET`; build with `VITE_TURNSTILE_SITE_KEY` |
+| Route model calls through **AI Gateway** (logs, caching, rate limits) | Var `AI_GATEWAY` (the gateway id) |
+| **Real deploys** with just-in-time API tokens | Secret `CF_API_TOKEN` (permission: Account API Tokens: Edit, nothing else); vars `CF_ACCOUNT_ID` and `CF_PAGES_SITES`, e.g. `{"okayed.dev":{"project":"okayed-site","branches":{"production":"main","staging":"staging"}}}` |
+| Archive every signed event to **R2** | Uncomment `r2_buckets` in `wrangler.jsonc` (R2 needs billing enabled on the account) |
+| Merge real PRs | Secret `GITHUB_TOKEN`: fine-grained, pull-request write on the demo repo only |
 
 ### Use the components in your own app
 
-The web build also publishes okayed's design system as a [shadcn registry](https://ui.shadcn.com/docs/registry) at
-`/r/`: the theme, the engine and each component.
+The Worker also serves okayed's design system as a [shadcn registry](https://ui.shadcn.com/docs/registry) at `/r/`:
+the theme, the engine, each component, and examples of each approval-button configuration. Item URLs carry the
+origin they're served from, so the registry works on any domain.
 
 ```bash
-npx shadcn add https://okayed.pages.dev/r/approval-card.json
-# or add "@okayed": "https://okayed.pages.dev/r/{name}.json" to "registries" in components.json, then:
-npx shadcn add @okayed/okayed
+npx shadcn add https://<your okayed>/r/approval-card.json
+# or add "@okayed": "https://<your okayed>/r/{name}.json" to "registries" in components.json, then:
+npx shadcn add @okayed/okayed @okayed/approval-card-hold
 ```
+
+The playground's Components view shows every configuration live, with its install command.
+
+## Cloudflare, end to end
+
+| Cloudflare | What it does here | Where |
+|---|---|---|
+| Workers + static assets | One Worker: the API, the web app, the playground and the registry, on one origin | `apps/worker/src/index.ts`, `api.ts` |
+| Durable Objects (SQLite) | A person's okayed (policy, requests, grants, use counters, audit), their chat, and each MCP session | `agent.ts`, `chat.ts`, `mcp.ts` |
+| Workflows | Each grant's lifecycle: propose, await the person, issue, expire or revoke | `workflow.ts` |
+| Agents SDK | `Agent` with live state over WebSocket, `AIChatAgent` with tool approval, `McpAgent` for remote MCP | `agent.ts`, `chat.ts`, `mcp.ts` |
+| Workers AI | Llama 3.3 drafts and explains; Whisper hears voice okays | `adapters.ts`, `chat.ts`, `agent.ts` |
+| AI Gateway | Optional: every model call logged, cached and rate limited | `AI_GATEWAY` |
+| KV + Workers OAuth Provider | OAuth for remote MCP clients: registration, consent, tokens | `consent.ts`, `index.ts` |
+| Access | Optional: your Access identity is your okayed; no owner token | `access.ts` |
+| Turnstile | Optional: a quiet human check on sign-up | `api.ts`, `welcome.tsx` |
+| Rate limiting | Sign-ups per address, requests per agent | `wrangler.jsonc`, `api.ts` |
+| Queues | Wakes paired approver apps, so a slow app never holds up a request | `notify.ts` |
+| Analytics Engine | One data point per request, issue and deploy | `agent.ts` (`metric`) |
+| R2 | Optional: an archive of every signed event | `agent.ts` (`archiveEvents`) |
+| API tokens | Real deploys: a Pages-only token minted per deploy, dead within ten minutes, deleted after use | `cloudflare.ts` |
+| Workers Logs | Observability for the Worker | `wrangler.jsonc` |
 
 ## Cloudflare assignment checklist
 
 | Requirement | Here |
 |---|---|
-| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`): the demo assistant's tool calling (`apps/worker/src/chat.ts`), plus drafting and explaining approvals and policies (`adapters.ts`) |
+| LLM | Llama 3.3 70B on Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`): the demo assistant's tool calling (`apps/worker/src/chat.ts`), plus drafting and explaining approvals and rules (`adapters.ts`); Whisper for voice |
 | Workflow / coordination | Agents SDK: `OkayedAgent` (a Durable Object per user) and `OkayedChat` (`AIChatAgent`, per user); `AgentWorkflow` for request → propose → await confirm → issue → expire/revoke |
-| User input | Chat on Pages (`apps/web`), with AI SDK tool approval wired to okayed and live state over the Agents SDK WebSocket. Voice via Realtime is a stretch goal and not built. |
-| Memory / state | Chat history in `OkayedChat`'s SQLite; rules, limits, requests, grants with use counters, passkeys, paired approvers and the audit log in `OkayedAgent` |
+| User input | Chat (`apps/web`, served by the Worker), with AI SDK tool approval wired to okayed and live state over the Agents SDK WebSocket. Voice: speak in the chat, transcribed by Whisper on Workers AI (not Realtime). |
+| Memory / state | Chat history in `OkayedChat`'s SQLite; rules, limits, requests, grants with use counters, passkeys, paired approvers and the audit log in `OkayedAgent`; OAuth state in KV; optionally every signed event in R2 |
 
 ## Not tied to Cloudflare
 
@@ -332,8 +379,11 @@ the in-memory adapters in Node.
   its use, which is safe for the intended flow (agent → tool) but is not proof of who the caller is.
 - Learned PR heads come from agent requests unless `GITHUB_TOKEN` is set. With the token, the Worker checks the head
   against GitHub and refuses a mismatch.
-- Paired approver apps work end to end on okayed's side, but no app ships with okayed yet, and no `Notifier` adapter
-  is wired up on Cloudflare: an app polls its inbox.
+- Paired approver apps work end to end on okayed's side, but no app ships with okayed yet. Apps are woken through
+  Queues when they give a wake URL; otherwise they poll their inbox.
+- Some Cloudflare pieces need an account to run, so they're covered by unit tests and a dry-run deploy rather than a
+  live run here: Access (JWT checks against a generated key), real deploys (against a stand-in Cloudflare API),
+  AI Gateway, Whisper and Turnstile.
 - The interpretation evals compare models only with your API credentials. The numbers here are the heuristic's.
 - Event kinds 4840–4845 and 34840 are placeholders, not registered NIPs.
 

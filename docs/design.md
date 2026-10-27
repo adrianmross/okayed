@@ -108,22 +108,22 @@ precise terms. Each pair names one thing:
 ## Components
 
 ```
-                 ┌─────────────── apps/web (Pages) ───────────────┐
- person ──chat──▶│ policy in plain words · request cards · audit  │
-                 └───────────────┬────────────────────────────────┘
-                                 │ WebSocket (Agents SDK) + HTTP
- agent ──POST /requests──▶ ┌─────▼──────────────────────────────┐   ┌──────────────┐
-                           │ apps/worker                        │──▶│ Workers AI   │
- tool ──POST /verify────▶  │  OkayedAgent (Durable Object/user) │   │ Llama 3.3    │
-                           │   policy · requests · grants ·     │   └──────────────┘
-                           │   audit · use counters             │
-                           │  GrantLifecycle (Workflow)         │
-                           │   propose → await confirm → issue  │
-                           │   → sleep until exp → expire       │
-                           │  /tools/github/merge (holds token) │──▶ GitHub API
-                           └─────┬──────────────────────────────┘
-                                 │ imports
-          packages/core ── service logic behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock)
+                ┌──────────── one Worker (apps/worker) ────────────────────────────────┐
+ person ──web──▶│ static assets: the demo, /playground, /r (shadcn registry)          │
+   (Access, ───▶│ /api        owner API, agent API, POST /verify (anyone)            │
+   Turnstile)   │ /agents/*   live state and the demo chat over WebSocket            │
+ agent ──MCP───▶│ /mcp        remote MCP (OAuth: /authorize → Connect → /token)       │──▶ Workers AI
+ tool ──verify─▶│                                                                      │    (Llama 3.3, Whisper,
+                │  OkayedAgent  Durable Object per person: policy · requests · grants │     via AI Gateway)
+                │               · use counters · audit · paired approvers             │
+                │  OkayedChat   AIChatAgent per person (the demo assistant)           │──▶ Queues → approver apps
+                │  OkayedMcp    McpAgent per MCP session                              │──▶ R2 (event archive)
+                │  GrantLifecycle (Workflow): propose → await → issue → expire/revoke │──▶ Analytics Engine
+                │  tools: GitHub merge (holds a token), Pages deploy (mints one)      │──▶ GitHub, Cloudflare API
+                └──────────────┬───────────────────────────────────────────────────────┘
+                               │ imports
+          packages/core ── service logic behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock, Notifier,
+                           Deployer)
           packages/engine ─ pure: catalog, resources, anchors, policy, narrowing, use checks
           packages/grant ── format: JCS, ids, Nostr events, signatures
 ```
@@ -141,7 +141,19 @@ in `packages/core`:
 | `Signer` | BIP-340 Schnorr over the event id | key from Worker secret | KMS, HSM, a hardware key |
 | `Vault` | swap a grant for a real credential | Worker secret | Vault, Secrets Manager |
 | `Clock` | `now()` in unix seconds | `Date.now` | — |
-| `Notifier` (optional) | wake a paired approver app | none yet: apps poll | a relay subscription, a push gateway, a webhook |
+| `Notifier` (optional) | wake a paired approver app | Queues, then an empty POST to the app's wake URL | a relay subscription, a push gateway, a webhook |
+| `Deployer` (optional) | deploy a site environment for a live grant | Pages, with an API token minted per deploy | any CI or platform API |
+
+Around the ports, `apps/worker` uses the rest of Cloudflare where it fits:
+
+- **Identity.** Cloudflare Access can stand in for the owner token: a valid Access JWT for the application picks the
+  person's okayed, derived from their Access identity. Remote MCP clients get OAuth from the Workers OAuth Provider
+  (KV), with consent on okayed's own Connect screen; each client becomes one agent.
+- **Abuse.** Turnstile on sign-up; the Workers rate-limiting binding on sign-ups and on each agent's requests.
+- **Observability.** Workers Logs, Analytics Engine data points for each request, issue and deploy, and AI Gateway
+  for model calls.
+- **Least privilege for real actions.** A deploy mints an account API token with only Pages Write, valid until the
+  grant expires (ten minutes at most), uses it once and deletes it. The standing secret can only mint tokens.
 
 `packages/core` ships in-memory adapters, and its tests run the whole flow (request, propose, confirm, issue,
 verify, second use refused, revoke, expire) in Node.
