@@ -4,31 +4,60 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  // Workers AI: Llama 3.3 drafts and explains. Free daily allocation; no paid plan needed.
+  // One Worker serves everything: the web app, the playground (/playground) and the shadcn registry (/r) as static
+  // assets; the API, live sockets, OAuth and remote MCP run in the Worker first.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*", "/agents/*", "/mcp", "/mcp/*", "/authorize", "/authorize/*", "/token", "/register", "/.well-known/*", "/r/*"]
+  },
+  // Workers AI: Llama 3.3 drafts and explains, Whisper hears voice okays. Free daily allocation.
   "ai": { "binding": "AI" },
-  // One Durable Object per person (SQLite-backed, available on the free plan).
+  // Durable Objects (SQLite-backed, free plan): okayed per person, the demo chat per person, one per MCP session.
   "durable_objects": {
     "bindings": [
       { "name": "OkayedAgent", "class_name": "OkayedAgent" },
-      { "name": "OkayedChat", "class_name": "OkayedChat" }
+      { "name": "OkayedChat", "class_name": "OkayedChat" },
+      { "name": "OkayedMcp", "class_name": "OkayedMcp" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["OkayedAgent"] },
-    { "tag": "v2", "new_sqlite_classes": ["OkayedChat"] }
+    { "tag": "v2", "new_sqlite_classes": ["OkayedChat"] },
+    { "tag": "v3", "new_sqlite_classes": ["OkayedMcp"] }
   ],
   // The grant lifecycle: propose → await confirm → issue → await revoke or expiry.
   "workflows": [
     { "name": "okayed-grant-lifecycle", "binding": "GRANT_LIFECYCLE", "class_name": "GrantLifecycle" }
   ],
+  // OAuth clients, codes and tokens for remote MCP. Wrangler creates the namespace on first deploy.
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  // Rate limits (Workers rate limiting, free): sign-ups per address and requests per agent, per minute.
+  "ratelimits": [
+    { "name": "SIGNUP_LIMIT", "namespace_id": "4840", "simple": { "limit": 5, "period": 60 } },
+    { "name": "AGENT_LIMIT", "namespace_id": "4841", "simple": { "limit": 60, "period": 60 } }
+  ],
+  // Analytics Engine: one data point per decision (requests, issues, deploys).
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "okayed_decisions" }],
+  // Queues (free plan since February 2026): wakes paired approver apps without holding up a request.
+  "queues": {
+    "producers": [{ "binding": "APPROVER_WAKE", "queue": "okayed-approver-wake" }],
+    "consumers": [{ "queue": "okayed-approver-wake", "max_retries": 3 }]
+  },
+  // R2 archive of every signed event: off here because R2 needs billing enabled on the account. To turn it on:
+  // "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "okayed-events" }],
   "vars": {
-    // "workers-ai" or "heuristic" (no model; useful offline).
+    // "workers-ai", "openai-compatible" or "heuristic" (no model; useful offline).
     "DRAFTER": "workers-ai",
     "MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    // Where the web app is served; passkeys are bound to these origins.
-    "WEB_ORIGINS": "https://okayed.pages.dev,http://localhost:5173,http://localhost:5174"
+    // Other origins the web app may be served from (the Worker's own origin always counts); passkeys bind to them.
+    "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174"
+    // Optional: "AI_GATEWAY" (an AI Gateway id), "ACCESS_TEAM" and "ACCESS_AUD" (Cloudflare Access),
+    // "CF_ACCOUNT_ID" and "CF_PAGES_SITES" (real deploys), "DEMO": "0".
   },
-  // Secrets (wrangler secret put): ISSUER_SECRET (64 hex chars), GITHUB_TOKEN (optional, for the demo tool).
+  // Secrets (wrangler secret put): ISSUER_SECRET (64 hex chars); optional GITHUB_TOKEN, TURNSTILE_SECRET,
+  // CF_API_TOKEN (Account API Tokens: Edit, for real deploys), DRAFT_API_KEY.
   "observability": { "enabled": true },
   "env": {
     // `wrangler dev --env local`: everything but Workers AI, so it runs without a Cloudflare login.
@@ -36,13 +65,25 @@
       "durable_objects": {
         "bindings": [
           { "name": "OkayedAgent", "class_name": "OkayedAgent" },
-          { "name": "OkayedChat", "class_name": "OkayedChat" }
+          { "name": "OkayedChat", "class_name": "OkayedChat" },
+          { "name": "OkayedMcp", "class_name": "OkayedMcp" }
         ]
       },
       "workflows": [
         { "name": "okayed-grant-lifecycle", "binding": "GRANT_LIFECYCLE", "class_name": "GrantLifecycle" }
       ],
-      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174" }
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth" }],
+      "ratelimits": [
+        { "name": "SIGNUP_LIMIT", "namespace_id": "4840", "simple": { "limit": 100, "period": 60 } },
+        { "name": "AGENT_LIMIT", "namespace_id": "4841", "simple": { "limit": 600, "period": 60 } }
+      ],
+      "queues": {
+        "producers": [{ "binding": "APPROVER_WAKE", "queue": "okayed-approver-wake" }],
+        "consumers": [{ "queue": "okayed-approver-wake", "max_retries": 3 }]
+      },
+      // Locally R2 is simulated, so the archive is on.
+      "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "okayed-events" }],
+      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:8787" }
     }
   }
 }

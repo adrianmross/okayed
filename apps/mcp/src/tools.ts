@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 /** What the tools need from the client: just enough to fake in tests. */
-export type Client = Pick<OkayedClient, "ask" | "waitFor" | "status" | "merge">;
+export type Client = Pick<OkayedClient, "ask" | "waitFor" | "status" | "merge" | "deploy">;
 
 const ACTIONS = `Actions and their exact resources:
 - github.read        github:<owner>/<repo>
@@ -92,6 +92,28 @@ export function registerTools(server: McpServer, client: Client): void {
         return text(`Merged ${owner}/${repo}#${number} as ${out.sha}. The grant has ${out.left} use(s) left.`);
       } catch (e) {
         return { ...text(`Not merged: ${(e as Error).message}`), isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "okayed_deploy_site",
+    {
+      title: "Deploy a site under a grant",
+      description:
+        "Deploys a site environment through okayed, which checks and spends your grant, then deploys on Cloudflare Pages with a token minted for this one deploy. Ask with okayed_request first (action site.deploy, resource site:<host>/<env>).",
+      inputSchema: { site: z.string().describe("e.g. okayed.dev"), env: z.string().describe("e.g. production") },
+    },
+    async ({ site, env }) => {
+      const res = `site:${site}/${env}`;
+      const event = grants.get(res);
+      if (!event) return text(`No grant for ${res} in this session. Ask first with okayed_request.`);
+      try {
+        const out = await client.deploy(event, { site, env });
+        grants.delete(res);
+        return text(`Deployed ${site} (${env}): deployment ${out.id}${out.url ? ` at ${out.url}` : ""}. The grant has ${out.left} use(s) left.`);
+      } catch (e) {
+        return { ...text(`Not deployed: ${(e as Error).message}`), isError: true };
       }
     },
   );

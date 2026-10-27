@@ -33,11 +33,15 @@ export class DurableStore implements Store {
 /** A Workers AI model (Llama 3.3 by default), in JSON mode. Its output is a draft for the engine, never a decision. */
 export class WorkersAIDrafter implements Drafter {
   readonly name: string;
+  /** Through an AI Gateway when one is configured: logs, caching, rate limits and analytics for every call. */
+  private readonly options: AiOptions | undefined;
   constructor(
     private ai: Ai,
     private model: string,
+    gateway?: string,
   ) {
     this.name = model.replace(/^@cf\//, "");
+    this.options = gateway ? { gateway: { id: gateway } } : undefined;
   }
 
   async draft(utterance: string, ctx: DraftContext): Promise<Draft> {
@@ -49,7 +53,7 @@ export class WorkersAIDrafter implements Drafter {
       response_format: { type: "json_schema", json_schema: DRAFT_SCHEMA },
       max_tokens: 400,
       temperature: 0,
-    } as never)) as { response?: unknown };
+    } as never, this.options)) as { response?: unknown };
     return parseDraft(out.response);
   }
 
@@ -61,7 +65,7 @@ export class WorkersAIDrafter implements Drafter {
       ],
       max_tokens: 120,
       temperature: 0.2,
-    } as never)) as { response?: unknown };
+    } as never, this.options)) as { response?: unknown };
     return typeof out.response === "string" && out.response.trim() ? out.response.trim() : null;
   }
 }

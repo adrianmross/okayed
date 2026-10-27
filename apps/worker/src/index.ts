@@ -1,160 +1,39 @@
-import { getAgentByName, routeAgentRequest } from "agents";
-import type { AgentMethod, ApiReply, OwnerMethod } from "./agent.ts";
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
+import { app } from "./api.ts";
 import type { Env } from "./env.ts";
+import { OkayedMcp } from "./mcp.ts";
+import { wake, type WakeMessage } from "./notify.ts";
 
 export { OkayedAgent } from "./agent.ts";
-export { GrantLifecycle } from "./workflow.ts";
 export { OkayedChat } from "./chat.ts";
+export { OkayedMcp } from "./mcp.ts";
+export { GrantLifecycle } from "./workflow.ts";
 
 /**
- * HTTP API. The person's browser uses an owner token; agents use agent tokens minted by the person; anyone may
- * verify a grant. Everything for a user is handled by that user's Durable Object.
+ * The Worker: OAuth for remote MCP clients wraps everything. /mcp needs an access token; the rest is the API, the
+ * live sockets and the web app (`app`). A queue consumer wakes paired approver apps.
  */
+const providers = new Map<string, OAuthProvider<Env>>();
 
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type",
-  "access-control-max-age": "86400",
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json; charset=utf-8", ...CORS } });
-}
-
-function send(r: ApiReply): Response {
-  return json(r.body ?? { ok: true }, r.status);
-}
-
-function bearer(req: Request): string | null {
-  const h = req.headers.get("authorization");
-  return h?.startsWith("Bearer ") ? h.slice(7).trim() : null;
-}
-
-async function body(req: Request): Promise<Record<string, unknown>> {
-  if (req.method === "GET" || req.method === "DELETE") return {};
-  try {
-    const b = await req.json();
-    return b && typeof b === "object" ? (b as Record<string, unknown>) : {};
-  } catch {
-    return {};
+/** One provider per origin the Worker is reached at (workers.dev, a custom domain, localhost): /mcp is its resource. */
+function provider(origin: string): OAuthProvider<Env> {
+  let p = providers.get(origin);
+  if (!p) {
+    p = new OAuthProvider<Env>({
+      apiHandlers: { "/mcp": OkayedMcp.serve("/mcp", { binding: "OkayedMcp" }) as never },
+      defaultHandler: app as never,
+      authorizeEndpoint: "/authorize",
+      tokenEndpoint: "/token",
+      clientRegistrationEndpoint: "/register",
+      scopesSupported: ["okayed"],
+      resourceMetadata: { resource: `${origin}/mcp`, authorization_servers: [origin], resource_name: "okayed" },
+    });
+    providers.set(origin, p);
   }
+  return p;
 }
-
-function newUserId(): string {
-  const b = new Uint8Array(16);
-  crypto.getRandomValues(b);
-  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-const INFO = {
-  name: "okayed",
-  what: "Scoped-authority approvals for AI agents: plain-language okays become exact, signed, expiring grants.",
-  docs: "https://github.com/adrianmross/okayed",
-  api: {
-    "POST /api/users": "create a user; returns userId and ownerToken",
-    "GET /api/u/:user/state": "owner: policy, cards, requests, grants, audit",
-    "POST /api/u/:user/chat": "owner: { text }",
-    "POST /api/u/:user/cards/:card/challenge": "owner: { origin } → passkey options bound to this exact request",
-    "POST /api/u/:user/cards/:card/confirm": "owner: { origin, assertion } approves with a passkey; without one, a plain okay",
-    "POST /api/u/:user/cards/:card/deny": "owner",
-    "POST /api/u/:user/passkeys/options | /passkeys": "owner: set up Face ID / Touch ID for approving",
-    "POST /api/u/:user/approvers": "owner: { pubkey, name } pairs an approver app on another device",
-    "GET /api/u/:user/approvers/inbox": "approver app, signed (NIP-98): approvals waiting for it",
-    "POST /api/u/:user/approvals": "approver app: { event } a signed kind-4845 answer",
-    "WS /agents/okayed-chat/:user?token=": "owner: the demo chat (Agents SDK AIChatAgent)",
-    "POST /api/u/:user/grants/:grant/revoke": "owner: { reason? }",
-    "POST /api/u/:user/stop | /resume": "owner: take back every permission and pause rules / resume them",
-    "POST /api/u/:user/agents": "owner: { name } → agent token (shown once)",
-    "PUT /api/u/:user/targets": "owner: { repos?, sites? }",
-    "PUT /api/u/:user/policy": "owner: { rules } replaces your rules",
-    "PUT /api/u/:user/budgets": "owner: { budgets } limits shared across rules, global or scoped (none by default)",
-    "POST /api/u/:user/rules/:key/topup": "owner: reset what a rule (its id) or a shared limit (budget:<id>) has used",
-    "POST /api/u/:user/requests": "agent: { act, res[], why, ttl? }",
-    "GET /api/u/:user/requests/:id?wait=10": "agent: status, and the grant event once issued",
-    "POST /api/u/:user/tools/github/merge": "agent: { grant, owner, repo, number, sha } — merges using okayed's token",
-    "POST /api/u/:user/verify": "anyone: { event | grantId, aud, act, res, consume? }",
-    "GET /api/u/:user/issuer": "anyone: the user's issuer key",
-  },
-};
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-    const url = new URL(req.url);
-
-    if (url.pathname.startsWith("/agents/")) {
-      // Only the person's own browser may reach their live state or their chat: check the owner token first.
-      const ownerOnly = async (r: Request) => {
-        const m = /^\/agents\/(okayed-agent|okayed-chat)\/([0-9a-f]{32})(?:\/.*)?$/.exec(new URL(r.url).pathname);
-        if (!m) return json({ error: "not found" }, 404);
-        const stub = await getAgentByName(env.OkayedAgent, m[2]!);
-        if (!(await stub.isOwner(new URL(r.url).searchParams.get("token")))) return json({ error: "unauthorized" }, 401);
-        // The okayed agent has no HTTP surface; the chat agent serves its message history.
-        if (r.headers.get("upgrade")?.toLowerCase() !== "websocket" && m[1] === "okayed-agent") return json({ error: "not found" }, 404);
-        return undefined;
-      };
-      const res = await routeAgentRequest(req, env, { cors: true, onBeforeConnect: ownerOnly, onBeforeRequest: ownerOnly });
-      return res ?? json({ error: "not found" }, 404);
-    }
-    if (url.pathname === "/" || url.pathname === "/api") return json(INFO);
-    if (url.pathname === "/api/users" && req.method === "POST") {
-      const id = newUserId();
-      const stub = await getAgentByName(env.OkayedAgent, id);
-      return send(await stub.claim());
-    }
-
-    const m = /^\/api\/u\/([0-9a-f]{32})(\/.*)$/.exec(url.pathname);
-    if (!m) return json({ error: "not found" }, 404);
-    const [, userId, rest] = m as unknown as [string, string, string];
-    const stub = await getAgentByName(env.OkayedAgent, userId);
-    const token = bearer(req);
-    const b = await body(req);
-    const route = `${req.method} ${rest}`;
-
-    // Anyone.
-    if (route === "POST /verify") return send(await stub.openApi("verify", [b]));
-    if (route === "GET /issuer") return send(await stub.openApi("issuer", []));
-    if (route === "GET /approvers/inbox") return send(await stub.openApi("inbox", [req.headers.get("authorization"), req.url]));
-    if (route === "POST /approvals") return send(await stub.openApi("answer", [b.event ?? b]));
-
-    // Agents.
-    if (token?.startsWith("agt_")) {
-      const agentId = await stub.agentFor(token);
-      if (!agentId) return json({ error: "unknown agent token" }, 401);
-      const call = (method: AgentMethod, args: unknown[]) => (stub.agentApi(agentId, method, args) as unknown as Promise<ApiReply>).then(send);
-      if (route === "POST /requests") return call("submitRequest", [b]);
-      const rq = /^GET \/requests\/(r_[0-9a-f]+)$/.exec(route);
-      if (rq) return call("requestStatus", [rq[1], url.searchParams.get("wait")]);
-      if (route === "POST /tools/github/merge") return call("merge", [b]);
-      return json({ error: "not found" }, 404);
-    }
-
-    // The person.
-    if (!(await stub.isOwner(token))) return json({ error: "unauthorized" }, 401);
-    const call = (method: OwnerMethod, args: unknown[] = []) => (stub.ownerApi(method, args) as unknown as Promise<ApiReply>).then(send);
-    if (route === "GET /state") return call("snapshot");
-    if (route === "GET /events") return call("events");
-    if (route === "POST /chat") return call("chat", [b.text]);
-    if (route === "POST /stop") return call("stop", [b.reason]);
-    if (route === "POST /resume") return call("resume");
-    if (route === "POST /agents") return call("addAgent", [b.name]);
-    if (route === "PUT /targets") return call("setTargets", [b]);
-    if (route === "PUT /policy") return call("setRules", [b.rules]);
-    if (route === "PUT /budgets") return call("setBudgets", [b.budgets]);
-    if (route === "POST /passkeys/options") return call("passkeyOptions", [b.origin]);
-    if (route === "POST /passkeys") return call("addPasskey", [b.origin, b.response, b.name]);
-    if (route === "POST /approvers") return call("pairApprover", [b.pubkey, b.name]);
-    let x: RegExpExecArray | null;
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/challenge$/.exec(route))) return call("approvalChallenge", [x[1], b.origin]);
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/confirm$/.exec(route))) return b.assertion ? call("confirmWithPasskey", [x[1], b.origin, b.assertion]) : call("confirm", [x[1]]);
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/deny$/.exec(route))) return call("deny", [x[1]]);
-    if ((x = /^DELETE \/passkeys\/([A-Za-z0-9_-]+)$/.exec(route))) return call("removePasskey", [x[1]]);
-    if ((x = /^DELETE \/approvers\/([0-9a-f]{64})$/.exec(route))) return call("unpairApprover", [x[1]]);
-    if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(route))) return call("revoke", [x[1], b.reason]);
-    if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decodeURIComponent(route)))) return call("removeAgent", [x[1]]);
-    if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decodeURIComponent(route)))) return call("topUp", [x[1]]);
-    if ((x = /^DELETE \/rules\/(.+)$/.exec(decodeURIComponent(route)))) return call("removeRule", [x[1]]);
-    return json({ error: "not found" }, 404);
-  },
-} satisfies ExportedHandler<Env>;
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => provider(new URL(req.url).origin).fetch(req, env, ctx),
+  queue: (batch: MessageBatch<WakeMessage>) => wake(batch),
+} satisfies ExportedHandler<Env, WakeMessage>;
