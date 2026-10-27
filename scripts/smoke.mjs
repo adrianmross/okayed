@@ -88,6 +88,26 @@ await call("POST", `${u}/approvals`, null, { event: signEvent(answerTemplate({ v
 const g5 = await call("GET", `${u}/requests/${s5.request.id}?wait=10`, agentToken);
 check(g5.status === "granted" && JSON.parse(g5.grant.content).assurance.method === "approver", "the app's signed answer issues the grant, with its proof");
 
+// A paired app with a wake URL is nudged through Cloudflare Queues; the nudge carries nothing.
+const { createServer } = await import("node:http");
+const woken = [];
+const hook = createServer((req, res) => (woken.push(req.url), res.end("ok"))).listen(0);
+const wakeUrl = `http://127.0.0.1:${hook.address().port}/wake`;
+const tablet = crypto.getRandomValues(new Uint8Array(32));
+await call("POST", `${u}/approvers`, ownerToken, { pubkey: publicKeyOf(tablet), name: "Tablet", wake: wakeUrl });
+await call("POST", `${u}/requests`, agentToken, { act: "site.deploy", res: ["site:openmeadow.org/production"], why: "again" });
+for (let i = 0; i < 40 && !woken.length; i++) await new Promise((r) => setTimeout(r, 500));
+check(woken.length > 0, "the queue wakes the paired app with an empty nudge");
+hook.close();
+
+// Every signed event is archived to R2 shortly after it happens.
+let archived = { events: [] };
+for (let i = 0; i < 30 && !archived.events.some((e) => e.kind === 4841); i++) {
+  await new Promise((r) => setTimeout(r, 1000));
+  archived = await call("GET", `${u}/archive`, ownerToken);
+}
+check(archived.events.some((e) => e.kind === 4841) && archived.events.some((e) => e.kind === 4840), `signed events land in the R2 archive (${archived.events.length})`);
+
 // The live-state socket must give nothing to a caller without the owner token.
 async function socketTypes(token) {
   const ws = new WebSocket(`${BASE.replace(/^http/, "ws")}/agents/okayed-agent/${userId}${token ? `?token=${token}` : ""}`);
