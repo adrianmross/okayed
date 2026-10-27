@@ -173,3 +173,23 @@ the IAM terms.
 - `fix(ui): say "your rules" when something is allowed, and name agents properly on tiles`
 - `test(e2e): wait for the assistant to finish before sending the next message`
 - `docs: describe the new words, approvers, the registry and interpreter evals`
+
+## 9. Approval buttons, and Cloudflare-native
+
+```text
+Show different button configurations in the registry: a row layout or a main action with two secondaries, and flows
+like single tap or swipe to approve. For Always allow, use what worked well in [redacted]: hold the button and slide
+up through how long it applies, then swipe all the way through to confirm. The same for deny. Different apps can use
+different configurations and add their own on top. Let's also do all the Cloudflare work we discussed.
+```
+
+The Cloudflare work: remote MCP with OAuth, Access sign-in, one Worker serving everything, AI Gateway, Turnstile, rate
+limits, Analytics Engine, Queues, an R2 archive, Whisper voice and real deploys with just-in-time tokens.
+
+- `feat(design): approval actions in layouts and flows, with slide and hold-and-slide`
+- `feat(playground): show every approval configuration in a Components view`
+- `feat(core): a Deployer port, and wake URLs for paired approver apps`
+- `feat(worker): run okayed as one Cloudflare-native Worker`
+- `feat(web): approval buttons, timed rules, voice, and the Connect screen`
+- `test: OAuth and MCP end to end, queue and archive checks, hold and slide in the browser`
+- `docs: describe okayed on Cloudflare end to end, and the approval buttons`
