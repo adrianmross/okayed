@@ -24,30 +24,52 @@ export function useRules(): Rule[] {
 }
 
 /**
- * "Always allow…" on an approval card: the narrowest rule that covers requests like this one, open in the editor.
- * Saving adds the rule and allows this request, so one Face ID covers both.
+ * "Always allow…" and "Block…" on an approval card. Without a duration they open the editor on the narrowest rule
+ * that covers requests like this one; saving adds the rule and decides this request too, so one Face ID covers both.
+ * With a duration (from hold-and-slide) the rule is added straight away, for that long or with no end (`null`).
  */
-export function useAlwaysAllow(): [(card: Card) => void, ReactNode] {
+export function useRuleFromCard(): { alwaysAllow: (card: Card, forSeconds?: number | null) => void; block: (card: Card, forSeconds?: number | null) => void; editor: ReactNode } {
   const okayed = useOkayed();
   const world = useEditorWorld();
   const rules = useRules();
-  const [card, setCard] = useState<Card | null>(null);
+  const [open, setOpen] = useState<{ card: Card; effect: "allow" | "deny" } | null>(null);
+
+  const ruleFor = (card: Card, effect: "allow" | "deny", forSeconds?: number | null): Rule => {
+    const r = ruleFromRequest(card.draft!, `r-${card.id.slice(-6)}`);
+    if (effect === "deny") {
+      r.effect = "deny";
+      delete r.when;
+    }
+    if (typeof forSeconds === "number" && world) r.until = world.now + forSeconds;
+    return r;
+  };
+  const decide = (card: Card, effect: "allow" | "deny") => (effect === "allow" ? okayed.approve(card.id) : okayed.deny(card.id));
+  const add = async (card: Card, rule: Rule, effect: "allow" | "deny") => {
+    if ((await okayed.run("PUT", "/policy", { rules: [...rules, rule] }, effect === "allow" ? "Rule added: allowed from now on." : "Rule added: blocked from now on.")) === undefined) return false;
+    return decide(card, effect);
+  };
+  const act = (effect: "allow" | "deny") => (card: Card, forSeconds?: number | null) => {
+    if (!card.draft) return;
+    if (forSeconds === undefined) setOpen({ card, effect });
+    else void add(card, ruleFor(card, effect, forSeconds), effect);
+  };
+
   const editor =
-    card?.draft && world ? (
+    open?.card.draft && world ? (
       <RuleEditor
-        key={card.id}
-        rule={ruleFromRequest(card.draft, `r-${card.id.slice(-6)}`)}
+        key={`${open.card.id}-${open.effect}`}
+        rule={ruleFor(open.card, open.effect)}
         isNew
         rules={rules}
         world={world}
-        title="Always allow"
-        saveLabel="Add rule and allow"
+        title={open.effect === "allow" ? "Always allow" : "Block"}
+        saveLabel={open.effect === "allow" ? "Add rule and allow" : "Add rule and don't allow"}
         onSave={async (next) => {
           if ((await okayed.run("PUT", "/policy", { rules: next }, "Rule added.")) === undefined) return false;
-          return okayed.approve(card.id);
+          return decide(open.card, open.effect);
         }}
-        onClose={() => setCard(null)}
+        onClose={() => setOpen(null)}
       />
     ) : null;
-  return [setCard, editor];
+  return { alwaysAllow: act("allow"), block: act("deny"), editor };
 }

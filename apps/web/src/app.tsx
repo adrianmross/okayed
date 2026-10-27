@@ -22,6 +22,7 @@ import { useRoute, type Route } from "./lib/route";
 import { loadSession, saveSession, type Session } from "./lib/session";
 import { ActivityView } from "./views/activity";
 import { ChatView } from "./views/chat";
+import { Connect } from "./views/connect";
 import { RulesView } from "./views/rules";
 import { SettingsView } from "./views/settings";
 import { Welcome } from "./views/welcome";
@@ -39,9 +40,12 @@ export function App() {
     saveSession(null);
     setSession(null);
   }, []);
+  // An MCP client sent the person here to approve it (OAuth consent from /authorize).
+  const connecting = location.hash.startsWith("#connect");
   if (!session) {
     return (
       <Welcome
+        {...(connecting ? { note: "An app wants to connect to your okayed. Start, or use your account, and you'll be asked to allow it." } : {})}
         onSession={(s) => {
           saveSession(s);
           setSession(s);
@@ -49,6 +53,7 @@ export function App() {
       />
     );
   }
+  if (connecting) return <Connect session={session} />;
   return (
     <OkayedProvider session={session} onSignOut={signOut}>
       <Shell />
