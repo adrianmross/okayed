@@ -116,6 +116,11 @@ export class OkayedClient {
   async merge(event: NostrEvent, pr: { owner: string; repo: string; number: number; sha: string; method?: "merge" | "squash" | "rebase" }): Promise<{ merged: true; sha: string; left: number }> {
     return this.call("POST", "/tools/github/merge", { grant: event, ...pr });
   }
+
+  /** Deploys a site environment through okayed's tool: Cloudflare Pages, with a token minted for this one deploy. */
+  async deploy(event: NostrEvent, target: { site: string; env: string }): Promise<{ deployed: true; id: string; url?: string; left: number }> {
+    return this.call("POST", "/tools/cloudflare/deploy", { grant: event, ...target });
+  }
 }
 
 /** The exact resource for a PR at a commit, as okayed names it. */

@@ -6,8 +6,8 @@ import { DEMO_SYSTEM, demoTools, scriptedModel, type DemoBackend } from "@okayed
 import type { Env } from "./env.ts";
 
 /**
- * The demo chat, one per person: Assistant with simulated tools. Every tool call goes through the person's okayed (its own
- * Durable Object): go ahead under policy, ask with a card, or refuse. Messages persist in this object's SQLite.
+ * The demo chat, one per person: an assistant with simulated tools. Every tool call goes through the person's okayed
+ * (its own Durable Object): allowed by a rule, asks with a card, or blocked. Messages persist in this object's SQLite.
  */
 export class OkayedChat extends AIChatAgent<Env> {
   async onChatMessage(onFinish: unknown, options?: { abortSignal?: AbortSignal }): Promise<Response> {
@@ -28,7 +28,7 @@ export class OkayedChat extends AIChatAgent<Env> {
     const model =
       this.env.DRAFTER === "heuristic" || !this.env.AI
         ? scriptedModel()
-        : createWorkersAI({ binding: this.env.AI })((this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast") as never);
+        : createWorkersAI({ binding: this.env.AI, ...(this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : {}) })((this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast") as never);
     const result = streamText({
       model,
       system: DEMO_SYSTEM,

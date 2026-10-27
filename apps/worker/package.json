@@ -5,18 +5,23 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "dev:local": "wrangler dev --env local",
-    "deploy": "wrangler deploy",
+    "dev": "mkdir -p ../web/dist && wrangler dev",
+    "dev:local": "mkdir -p ../web/dist && wrangler dev --env local",
+    "deploy": "pnpm --dir ../.. build:site && wrangler queues create okayed-approver-wake 2>/dev/null; wrangler deploy --env=\"\"",
     "typecheck": "tsc -p .",
     "test": "vitest run"
   },
   "dependencies": {
+    "@cloudflare/ai-chat": "^0.12.2",
+    "@cloudflare/workers-oauth-provider": "^1.2.4",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "@okayed/client": "workspace:*",
     "@okayed/core": "workspace:*",
     "@okayed/engine": "workspace:*",
     "@okayed/grant": "workspace:*",
+    "@okayed/mcp": "workspace:*",
     "agents": "^0.31.0",
-    "@cloudflare/ai-chat": "^0.12.2",
     "ai": "^7.0.157",
     "workers-ai-provider": "^4.0.1",
     "zod": "^4.1.12"

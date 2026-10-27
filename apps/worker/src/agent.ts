@@ -10,6 +10,7 @@ import {
   OpenAICompatibleDrafter,
   SystemClock,
   cryptoRandom,
+  deployWithGrant,
   mergeWithGrant,
   prHead,
   type Drafter,
@@ -23,13 +24,15 @@ import {
 import { parseRes } from "@okayed/engine";
 import { KIND, sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
+import { CloudflarePagesDeployer } from "./cloudflare.ts";
+import { QueueNotifier } from "./notify.ts";
 import type { Env } from "./env.ts";
 
 export type ApiReply = { status: number; body: unknown };
 
 /** Methods the HTTP router may call, by who is calling. */
-const OWNER = ["passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events", "pairApprover", "unpairApprover"] as const;
-const AGENT = ["submitRequest", "requestStatus", "merge"] as const;
+const OWNER = ["archive", "transcribe", "passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events", "pairApprover", "unpairApprover"] as const;
+const AGENT = ["submitRequest", "requestStatus", "merge", "deploy"] as const;
 const PUBLIC = ["verify", "issuer", "inbox", "answer"] as const;
 export type OwnerMethod = (typeof OWNER)[number];
 export type AgentMethod = (typeof AGENT)[number];
@@ -52,7 +55,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       this.env.DRAFTER === "openai-compatible" && this.env.DRAFT_BASE_URL && this.env.MODEL
         ? new OpenAICompatibleDrafter({ baseUrl: this.env.DRAFT_BASE_URL, model: this.env.MODEL, ...(this.env.DRAFT_API_KEY ? { apiKey: this.env.DRAFT_API_KEY } : {}) })
         : this.env.DRAFTER !== "heuristic" && this.env.AI
-          ? new WorkersAIDrafter(this.env.AI, this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+          ? new WorkersAIDrafter(this.env.AI, this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast", this.env.AI_GATEWAY)
           : null;
     const drafter: Drafter = model ? new FallbackDrafter(model, heuristic) : heuristic;
     const lifecycle: Lifecycle = {
@@ -75,6 +78,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       drafter,
       lifecycle,
       random: cryptoRandom,
+      ...(this.env.APPROVER_WAKE ? { notifier: new QueueNotifier(this.env.APPROVER_WAKE) } : {}),
     });
     return this._svc;
   }
@@ -89,6 +93,8 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   }
 
   private ownsConnection(ctx: ConnectionContext): boolean {
+    // The Worker sets this only after checking the person's Cloudflare Access identity, and strips it otherwise.
+    if (ctx.request.headers.get("x-okayed-owner") === "access") return true;
     const token = new URL(ctx.request.url).searchParams.get("token");
     return !!token && !!this.ownerHash && sha256Hex(token) === this.ownerHash;
   }
@@ -127,6 +133,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     try {
       const body = await fn();
       await this.broadcastSnapshot();
+      await this.archiveSoon();
       return { status, body };
     } catch (e) {
       if (e instanceof OkayedError) return { status: e.status, body: { error: e.message } };
@@ -162,6 +169,10 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     switch (method) {
       case "snapshot":
         return this.reply(() => s.snapshot());
+      case "transcribe":
+        return this.reply(() => this.transcribe(a[0]));
+      case "archive":
+        return this.reply(() => this.archived());
       case "passkeyOptions":
         return this.reply(async () => s.passkeyOptions(this.rp(a[0])));
       case "addPasskey":
@@ -201,7 +212,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       case "events":
         return this.reply(() => s.events());
       case "pairApprover":
-        return this.reply(() => s.pairApprover(a[0], a[1]), 201);
+        return this.reply(() => s.pairApprover(a[0], a[1], a[2] ?? undefined), 201);
       case "unpairApprover":
         return this.reply(() => s.unpairApprover(String(a[0])));
     }
@@ -215,7 +226,9 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
         return this.reply(async () => {
           const input = (args[0] ?? {}) as { act?: unknown; res?: unknown; why?: unknown; ttl?: unknown };
           await this.checkHeads(input);
-          return s.submitRequest(agentId, input);
+          const out = await s.submitRequest(agentId, input);
+          this.metric("request", out.status, out.request.act);
+          return out;
         }, 202);
       case "requestStatus":
         return this.reply(async () => {
@@ -234,6 +247,16 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
           const input = { ...(args[0] as MergeInput), aud: agentId };
           const out = await mergeWithGrant(s, { github: async () => this.env.GITHUB_TOKEN ?? null }, input);
           if (!out.ok) throw new OkayedError(out.stage === "config" ? 501 : out.stage === "github" ? 502 : 403, out.reason);
+          return out;
+        });
+      case "deploy":
+        return this.reply(async () => {
+          const deployer = this.deployer();
+          if (!deployer) throw new OkayedError(501, "real deploys aren't configured here (CF_ACCOUNT_ID, CF_API_TOKEN, CF_PAGES_SITES)");
+          const b = (args[0] ?? {}) as { grant?: unknown; site?: unknown; env?: unknown };
+          const out = await deployWithGrant(s, deployer, { grant: b.grant, aud: agentId, host: String(b.site ?? ""), env: String(b.env ?? "") });
+          this.metric("deploy", out.ok ? "deployed" : out.stage, "site.deploy");
+          if (!out.ok) throw new OkayedError(out.stage === "deploy" ? 502 : 403, out.reason);
           return out;
         });
     }
@@ -273,17 +296,72 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     }
   }
 
-  /** The relying party for a passkey ceremony: only origins this deployment serves its web app from. */
-  private rp(origin: unknown): RelyingParty {
-    const allowed = (this.env.WEB_ORIGINS ?? "http://localhost:5173,http://localhost:5174").split(",").map((o) => o.trim()).filter(Boolean);
-    if (typeof origin !== "string" || !allowed.includes(origin)) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);
+  /**
+   * The relying party for a passkey ceremony: only origins this deployment serves its web app from. The Worker's own
+   * origin always counts; the router marks it, since only the router sees the request URL.
+   */
+  private rp(o: unknown): RelyingParty {
+    const same = typeof o === "object" && o !== null && (o as { same?: unknown }).same === true;
+    const origin = same ? (o as { origin: unknown }).origin : o;
+    const allowed = (this.env.WEB_ORIGINS ?? "http://localhost:5173,http://localhost:5174").split(",").map((x) => x.trim()).filter(Boolean);
+    if (typeof origin !== "string" || (!same && !allowed.includes(origin))) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);
     return { origin, rpID: new URL(origin).hostname, rpName: "okayed" };
+  }
+
+  // ---------- Cloudflare extras: metrics, the event archive, voice, real deploys ----------
+
+  /** One Analytics Engine data point per decision: what kind, how it went, which action. */
+  private metric(kind: string, outcome: string, act = ""): void {
+    this.env.METRICS?.writeDataPoint({ blobs: [kind, outcome, act], doubles: [1], indexes: [this.name] });
+  }
+
+  private archivePending = false;
+
+  /** Every signed event goes to R2 as well, a little after it happens (one batch per quiet moment). */
+  private async archiveSoon(): Promise<void> {
+    if (!this.env.ARCHIVE || this.archivePending) return;
+    this.archivePending = true;
+    await this.schedule(5, "archiveEvents");
+  }
+
+  async archiveEvents(): Promise<void> {
+    this.archivePending = false;
+    const bucket = this.env.ARCHIVE;
+    if (!bucket) return;
+    const done = new Set((await this.ctx.storage.get<string[]>("archived")) ?? []);
+    const fresh = (await this.svc.events()).filter((e) => !done.has(e.id));
+    for (const e of fresh) {
+      await bucket.put(`${this.name}/${e.kind}/${e.created_at}-${e.id}.json`, JSON.stringify(e), { httpMetadata: { contentType: "application/json" }, customMetadata: { kind: String(e.kind) } });
+    }
+    if (fresh.length) await this.ctx.storage.put("archived", [...done, ...fresh.map((e) => e.id)].slice(-2000));
+  }
+
+  /** What the R2 archive holds for this person: every signed event, by kind. */
+  private async archived(): Promise<{ events: { key: string; kind: number; size: number }[] }> {
+    if (!this.env.ARCHIVE) throw new OkayedError(501, "the R2 archive isn't configured here");
+    const list = await this.env.ARCHIVE.list({ prefix: `${this.name}/`, include: ["customMetadata"] });
+    return { events: list.objects.map((o) => ({ key: o.key.slice(this.name.length + 1), kind: Number(o.customMetadata?.kind ?? 0), size: o.size })) };
+  }
+
+  /** Speech to text for voice okays: Whisper on Workers AI. The words then go through drafting like typed ones. */
+  private async transcribe(audio: unknown): Promise<{ text: string }> {
+    if (!this.env.AI) throw new OkayedError(501, "Voice needs Workers AI, which isn't available in this environment.");
+    if (typeof audio !== "string" || !audio || audio.length > 8_000_000) throw new OkayedError(400, "send audio as base64, up to about 6 MB");
+    const out = (await this.env.AI.run("@cf/openai/whisper-large-v3-turbo" as keyof AiModels, { audio } as never, this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : undefined)) as { text?: string };
+    return { text: (out.text ?? "").trim() };
+  }
+
+  private deployer(): CloudflarePagesDeployer | null {
+    const { CF_ACCOUNT_ID: account, CF_API_TOKEN: token, CF_PAGES_SITES: sites } = this.env;
+    if (!account || !token || !sites) return null;
+    return new CloudflarePagesDeployer({ accountId: account, token, sites: JSON.parse(sites), ...(this.env.CF_PAGES_WRITE_GROUP ? { permissionGroup: this.env.CF_PAGES_WRITE_GROUP } : {}) });
   }
 
   // ---------- RPC from the demo chat (Assistant's tools) ----------
 
   async demoRequest(input: { act: string; res: string[]; why: string; ref: string }) {
     const out = await this.svc.submitRequest(DEMO_AGENT, input);
+    this.metric("request", out.status, input.act);
     await this.broadcastSnapshot();
     return { status: out.status, ...(out.reason ? { reason: out.reason } : {}), ...(out.cardId ? { cardId: out.cardId } : {}) };
   }
@@ -312,6 +390,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   }
   async flowIssue(id: string, assurance: Assurance) {
     const out = await this.svc.issue(id, assurance);
+    this.metric("issued", assurance.method);
     await this.broadcastSnapshot();
     return out;
   }

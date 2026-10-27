@@ -7,7 +7,7 @@ import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { PR } from "./data";
 
-const REGISTRY = `${(import.meta.env.VITE_WEB_URL as string | undefined) ?? "https://okayed.pages.dev"}/r`;
+const REGISTRY = `${(import.meta.env.VITE_WEB_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:8787" : location.origin)}/r`;
 type Passkey = "ready" | "setup" | "unsupported";
 
 const lasting = (s: number | null | undefined) =>

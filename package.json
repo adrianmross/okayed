@@ -12,11 +12,12 @@
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "build": "pnpm -r --if-present build",
+    "build:site": "pnpm --filter @okayed/web build && pnpm --filter @okayed/playground exec vite build --outDir ../web/dist/playground --emptyOutDir",
     "dev:worker": "pnpm --filter @okayed/worker dev",
     "dev:local": "pnpm --filter @okayed/worker dev:local",
     "dev:web": "pnpm --filter @okayed/web dev",
     "dev:playground": "pnpm --filter @okayed/playground dev",
-    "e2e": "node scripts/smoke.mjs && node scripts/e2e-web.mjs"
+    "e2e": "node scripts/smoke.mjs && node scripts/mcp-remote.mjs && node scripts/e2e-web.mjs http://localhost:8787"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

@@ -4,7 +4,8 @@ import { AskView } from "./ask";
 import { ComponentsView } from "./components";
 import { WordsView } from "./words";
 
-const WEB = (import.meta.env.VITE_WEB_URL as string | undefined) ?? "http://localhost:5173";
+// Served at /playground by the same Worker as the demo; in development the demo is on its own port.
+const WEB = (import.meta.env.VITE_WEB_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:5173" : "../");
 type View = "ask" | "words" | "components";
 const read = (): View => (location.hash === "#words" ? "words" : location.hash === "#components" ? "components" : "ask");
 

@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": { "okayed-mcp": "./src/main.ts" },
+  "exports": { "./tools": "./src/tools.ts" },
   "scripts": {
     "start": "node src/main.ts",
     "test": "vitest run",

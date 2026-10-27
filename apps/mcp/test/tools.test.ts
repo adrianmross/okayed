@@ -29,13 +29,25 @@ function fakeClient(answers: Answer[], merged: string[] = []): Client {
     waitFor: async () => answers.shift()!,
     status: async () => answers.shift()!,
     merge: async (_e, pr) => (merged.push(`${pr.owner}/${pr.repo}#${pr.number}`), { merged: true as const, sha: "m1", left: 0 }),
+    deploy: async (_e, t) => (merged.push(`${t.site}/${t.env}`), { deployed: true as const, id: "dep-1", url: "https://abc.pages.dev", left: 0 }),
   };
 }
 
 describe("okayed MCP tools", () => {
-  it("lists the four tools", async () => {
+  it("lists the five tools", async () => {
     const { mcp } = await connect(fakeClient([]));
-    expect((await mcp.listTools()).tools.map((t) => t.name).sort()).toEqual(["okayed_actions", "okayed_merge_pr", "okayed_request", "okayed_status"]);
+    expect((await mcp.listTools()).tools.map((t) => t.name).sort()).toEqual(["okayed_actions", "okayed_deploy_site", "okayed_merge_pr", "okayed_request", "okayed_status"]);
+  });
+
+  it("deploys through okayed with a grant for that exact site and environment, once", async () => {
+    const done: string[] = [];
+    const deployGrant = { ...grant, act: "site.deploy", res: ["site:okayed.dev/production"], when: [] };
+    const { call } = await connect(fakeClient([{ request: "r_9", status: "granted", grant: deployGrant, event }], done));
+    await call("okayed_request", { action: "site.deploy", resources: ["site:okayed.dev/production"], why: "ship" });
+    expect((await call("okayed_deploy_site", { site: "okayed.dev", env: "staging" })).text).toMatch(/No grant for site:okayed.dev\/staging/);
+    expect((await call("okayed_deploy_site", { site: "okayed.dev", env: "production" })).text).toBe("Deployed okayed.dev (production): deployment dep-1 at https://abc.pages.dev. The grant has 0 use(s) left.");
+    expect(done).toEqual(["okayed.dev/production"]);
+    expect((await call("okayed_deploy_site", { site: "okayed.dev", env: "production" })).text).toMatch(/Ask first/);
   });
 
   it("asks, reports a standing-policy grant, and merges with it without exposing it", async () => {

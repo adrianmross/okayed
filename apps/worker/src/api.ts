@@ -58,6 +58,17 @@ async function human(secret: string, token: unknown, ip: string | null): Promise
   return r.ok && ((await r.json()) as { success?: boolean }).success === true;
 }
 
+/**
+ * The shadcn registry's items name each other by URL. The build writes a placeholder origin, and this fills in the
+ * one the registry is served from, so it works on workers.dev, a custom domain or localhost alike.
+ */
+async function registryItem(req: Request, url: URL, assets: Fetcher): Promise<Response> {
+  const r = await assets.fetch(req);
+  if (!r.ok) return r;
+  const body = (await r.text()).replaceAll("__OKAYED_ORIGIN__", url.origin);
+  return new Response(body, { headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } });
+}
+
 function newUserId(): string {
   const b = new Uint8Array(16);
   crypto.getRandomValues(b);
@@ -94,6 +105,7 @@ const INFO = {
     "POST /api/u/:user/tools/github/merge": "agent: { grant, owner, repo, number, sha } — merges using okayed's token",
     "POST /api/u/:user/tools/cloudflare/deploy": "agent: { grant, site, env } — deploys a Pages project with a just-in-time Cloudflare API token",
     "POST /api/u/:user/transcribe": "owner: { audio: base64 } → { text } (Whisper on Workers AI)",
+    "GET /api/u/:user/archive": "owner: the signed events archived in R2",
     "POST /api/u/:user/verify": "anyone: { event | grantId, aud, act, res, consume? }",
     "GET /api/u/:user/issuer": "anyone: the user's issuer key",
   },
@@ -125,6 +137,7 @@ export const app = {
       return res ?? json({ error: "not found" }, 404);
     }
     if (url.pathname === "/api" || url.pathname === "/api/") return json(INFO);
+    if (url.pathname.startsWith("/r/") && url.pathname.endsWith(".json") && env.ASSETS) return registryItem(req, url, env.ASSETS);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : json(INFO);
     const ip = req.headers.get("cf-connecting-ip");
     if (url.pathname === "/api/me" && req.method === "GET") {
@@ -180,6 +193,7 @@ export const app = {
     const call = (method: OwnerMethod, args: unknown[] = []) => (stub.ownerApi(method, args) as unknown as Promise<ApiReply>).then(send);
     if (route === "GET /state") return call("snapshot");
     if (route === "GET /events") return call("events");
+    if (route === "GET /archive") return call("archive");
     if (route === "POST /chat") return call("chat", [b.text]);
     if (route === "POST /stop") return call("stop", [b.reason]);
     if (route === "POST /resume") return call("resume");
