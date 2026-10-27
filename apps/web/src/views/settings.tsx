@@ -1,4 +1,5 @@
-import { ActionTile, AgentAvatar, agentName } from "@okayed/design/okayed";
+import { ActionTile, AgentAvatar, ApprovalCard, agentName, type ApprovalFlow, type ApprovalLayout } from "@okayed/design/okayed";
+import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { Button } from "@okayed/design/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@okayed/design/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@okayed/design/ui/dialog";
@@ -11,6 +12,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Page, Section } from "../components/page";
 import { useOkayed } from "../lib/okayed";
+import { useApprovalStyle } from "../lib/style";
 import { passkeyName, passkeysSupported, setUpPasskey } from "../lib/passkey";
 
 const PRESETS: { name: string; text: string; rules: Rule[]; tone: "deploy" | "merge" | "read" }[] = [
@@ -65,6 +67,8 @@ export function SettingsView() {
             )}
           </div>
         </Section>
+
+        <ApprovalButtons />
 
         <Section title="Presets" description="Start over from a preset. It replaces your rules, and you can change any of them afterwards.">
           <div className="grid gap-3 md:grid-cols-3">
@@ -126,6 +130,55 @@ export function SettingsView() {
   );
 }
 
+/** How approval cards decide, on this device: the layout of the buttons, and tap, swipe or hold-and-slide. */
+function ApprovalButtons() {
+  const [style, setStyle] = useApprovalStyle();
+  const [log, setLog] = useState("Try it: nothing here is sent anywhere.");
+  const days = (t?: number | null) => (t === undefined ? "opens the editor" : t === null ? "with no end" : t >= 86400 ? `for ${t / 86400} day${t === 86400 ? "" : "s"}` : `for ${t / 3600} hour${t === 3600 ? "" : "s"}`);
+  return (
+    <Section title="Approval buttons" description="How cards ask you to decide on this device. Hold and slide: press Always allow… or Block…, slide up to choose how long, then across to confirm.">
+      <div className="grid gap-4 md:grid-cols-[1fr_minmax(0,28rem)]">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <div className="font-medium text-sm">Layout</div>
+            <ToggleGroup type="single" variant="outline" value={style.layout} onValueChange={(v) => v && setStyle({ ...style, layout: v as ApprovalLayout })}>
+              <ToggleGroupItem value="stack">Stacked</ToggleGroupItem>
+              <ToggleGroupItem value="row">In a row</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div className="space-y-1.5">
+            <div className="font-medium text-sm">To decide</div>
+            <ToggleGroup type="single" variant="outline" value={style.flow} onValueChange={(v) => v && setStyle({ ...style, flow: v as ApprovalFlow })}>
+              <ToggleGroupItem value="tap">Tap</ToggleGroupItem>
+              <ToggleGroupItem value="swipe">Swipe</ToggleGroupItem>
+              <ToggleGroupItem value="hold">Hold and slide</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <p className="text-muted-foreground text-sm" aria-live="polite">{log}</p>
+        </div>
+        <ApprovalCard
+          agent="agent:assistant"
+          act="site.deploy"
+          res={["site:openmeadow.org/production"]}
+          uses={1}
+          ttl={1800}
+          when={[]}
+          risk="high"
+          why="ship the latest build to production"
+          state="pending"
+          passkey="ready"
+          layout={style.layout}
+          flow={style.flow}
+          onApprove={() => setLog("Allow once.")}
+          onDeny={() => setLog("Don't allow.")}
+          onAlwaysAllow={(t) => setLog(`Always allow: ${days(t)}.`)}
+          onBlock={(t) => setLog(`Block: ${days(t)}.`)}
+        />
+      </div>
+    </Section>
+  );
+}
+
 function ConnectAgent() {
   const okayed = useOkayed();
   const [name, setName] = useState("");
@@ -133,14 +186,24 @@ function ConnectAgent() {
   const config = minted
     ? JSON.stringify({ mcpServers: { okayed: { command: "node", args: ["okayed/apps/mcp/src/main.ts"], env: { OKAYED_API: okayed.session.api, OKAYED_USER: okayed.session.userId, OKAYED_TOKEN: minted.token } } } }, null, 2)
     : "";
+  const remote = `${okayed.session.api}/mcp`;
   return (
     <Dialog onOpenChange={(o) => !o && (setMinted(null), setName(""))}>
       <DialogTrigger asChild><Button variant="outline" size="sm"><PlugIcon />Connect an agent</Button></DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Connect an agent</DialogTitle>
-          <DialogDescription>It gets a token to ask okayed for permission. The token is shown once; okayed keeps only its hash.</DialogDescription>
+          <DialogDescription>Any MCP client can connect by URL: it signs in through okayed, and you allow it here. Or mint a token for a local MCP server.</DialogDescription>
         </DialogHeader>
+        <div className="space-y-2 rounded-xl border p-3">
+          <p className="font-medium text-sm">Remote MCP server</p>
+          <div className="flex gap-2">
+            <Input readOnly value={remote} className="font-mono text-xs" aria-label="MCP server URL" />
+            <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(remote).then(() => toast.success("Copied."), () => toast.error("Couldn't copy; select the text instead."))}><CopyIcon />Copy</Button>
+          </div>
+          <p className="text-muted-foreground text-xs">Add it to Claude, Cursor or any MCP client. It opens okayed to ask you, then shows up under Agents.</p>
+        </div>
+        <p className="font-medium text-sm">Or a local MCP server, with a token</p>
         {!minted ? (
           <form className="flex gap-2" onSubmit={async (e) => (e.preventDefault(), setMinted((await okayed.run<{ id: string; token: string }>("POST", "/agents", { name })) ?? null))}>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name, e.g. ci-bot" aria-label="Agent name" />

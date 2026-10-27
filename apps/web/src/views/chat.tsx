@@ -11,9 +11,11 @@ import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { describeRule } from "@okayed/engine";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useAgent } from "agents/react";
-import { ArrowUpIcon, ScanFaceIcon, SquarePenIcon } from "lucide-react";
+import { ArrowUpIcon, MicIcon, ScanFaceIcon, SquareIcon, SquarePenIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useAlwaysAllow } from "../components/always-allow";
+import { toast } from "sonner";
+import { useRuleFromCard } from "../components/always-allow";
+import { useApprovalStyle } from "../lib/style";
 import { useOkayed } from "../lib/okayed";
 import { passkeysSupported } from "../lib/passkey";
 
@@ -151,7 +153,10 @@ function Composer({ busy, onSend, onStop }: { busy: boolean; onSend: (t: string)
             className="min-h-12 text-[15px]"
           />
           <InputGroupAddon align="block-end" className="justify-between">
-            <span className="text-muted-foreground text-xs">Actions are simulated. Permissions are real.</span>
+            <span className="flex items-center gap-2 text-muted-foreground text-xs">
+              <Mic onText={(t) => setText((x) => (x ? `${x} ${t}` : t))} />
+              Actions are simulated. Permissions are real.
+            </span>
             {busy ? (
               <InputGroupButton variant="secondary" size="sm" className="rounded-full" onClick={onStop}>Stop</InputGroupButton>
             ) : (
@@ -163,6 +168,54 @@ function Composer({ busy, onSend, onStop }: { busy: boolean; onSend: (t: string)
         </InputGroup>
       </form>
     </div>
+  );
+}
+
+/**
+ * Say it instead of typing it: Whisper on Workers AI hears it, and the words land in the box for you to read before
+ * sending. Nothing is sent or approved by voice alone.
+ */
+function Mic({ onText }: { onText: (t: string) => void }) {
+  const okayed = useOkayed();
+  const [rec, setRec] = useState<MediaRecorder | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) return null;
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const r = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      r.ondataavailable = (e) => chunks.push(e.data);
+      r.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setBusy(true);
+        try {
+          const bytes = new Uint8Array(await new Blob(chunks, { type: r.mimeType }).arrayBuffer());
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          const { text } = await okayed.call<{ text: string }>("POST", "/transcribe", { audio: btoa(bin) });
+          if (text) onText(text);
+          else toast("I didn't catch that.");
+        } catch (e) {
+          toast.error((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      };
+      r.start();
+      setRec(r);
+    } catch {
+      toast.error("The microphone isn't available.");
+    }
+  };
+  const stop = () => {
+    rec?.stop();
+    setRec(null);
+  };
+  return (
+    <InputGroupButton type="button" size="icon-xs" variant={rec ? "destructive" : "ghost"} className="rounded-full" disabled={busy} onClick={rec ? stop : start} aria-label={rec ? "Stop recording" : "Say it"} title={rec ? "Stop recording" : "Say it"}>
+      {rec ? <SquareIcon /> : <MicIcon />}
+    </InputGroupButton>
   );
 }
 
@@ -216,7 +269,8 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   const output = (part.state === "output-available" ? part.output : undefined) as { done?: boolean; grant?: string; summary?: string; card?: string; reason?: string } | undefined;
   const approval = "approval" in part ? (part.approval as { id: string; approved?: boolean; reason?: string } | undefined) : undefined;
   const [approving, setApproving] = useState(false);
-  const [alwaysAllow, editor] = useAlwaysAllow();
+  const { alwaysAllow, block, editor } = useRuleFromCard();
+  const [style] = useApprovalStyle();
 
   // Once okayed has issued the permission, tell the chat it was approved so the assistant carries on.
   const respondedFor = useRef<string | null>(null);
@@ -273,7 +327,10 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
           passkey={passkeysSupported() ? (okayed.snap?.passkeys.length ? "ready" : "setup") : "unsupported"}
           onApprove={() => approve()}
           onApprovePlain={() => approve(true)}
-          onAlwaysAllow={() => alwaysAllow(card)}
+          onAlwaysAllow={(t) => alwaysAllow(card, t)}
+          onBlock={(t) => block(card, t)}
+          layout={style.layout}
+          flow={style.flow}
           onDeny={() => card && okayed.deny(card.id)}
         />
       )}

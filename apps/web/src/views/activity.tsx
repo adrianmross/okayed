@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@okayed/design/ui/tabs
 import { CATALOG, labelRes } from "@okayed/engine";
 import { OctagonXIcon } from "lucide-react";
 import { useState } from "react";
-import { useAlwaysAllow } from "../components/always-allow";
+import { useRuleFromCard } from "../components/always-allow";
+import { useApprovalStyle } from "../lib/style";
 import { Page } from "../components/page";
 import { useOkayed } from "../lib/okayed";
 import { passkeysSupported } from "../lib/passkey";
@@ -40,7 +41,8 @@ export function ActivityView() {
   const okayed = useOkayed();
   const snap = okayed.snap;
   const [event, setEvent] = useState<GrantRecord | null>(null);
-  const [alwaysAllow, editor] = useAlwaysAllow();
+  const { alwaysAllow, block, editor } = useRuleFromCard();
+  const [style] = useApprovalStyle();
   if (!snap) return <Page title="Activity">{null}</Page>;
   const waiting = snap.cards.filter((c) => c.status === "open" && c.kind === "grant" && c.draft);
   const active = snap.grants.filter((g) => g.status === "active");
@@ -96,7 +98,10 @@ export function ActivityView() {
                   passkey={passkeysSupported() ? (snap.passkeys.length ? "ready" : "setup") : "unsupported"}
                   onApprove={() => okayed.approve(c.id)}
                   onApprovePlain={() => okayed.approve(c.id, true)}
-                  onAlwaysAllow={() => alwaysAllow(c)}
+                  onAlwaysAllow={(t) => alwaysAllow(c, t)}
+                  onBlock={(t) => block(c, t)}
+                  layout={style.layout}
+                  flow={style.flow}
                   onDeny={() => okayed.deny(c.id)}
                 />
               ))}
