@@ -344,9 +344,12 @@ export class OkayedService implements FlowTarget {
   }
 
   /** Pairs an approver app by its public key, so approvals can be pushed to it and answered from there. */
-  async pairApprover(pubkey: unknown, name?: unknown): Promise<PairedApprover> {
+  async pairApprover(pubkey: unknown, name?: unknown, wake?: unknown): Promise<PairedApprover> {
     if (typeof pubkey !== "string" || !/^[0-9a-f]{64}$/.test(pubkey)) throw new OkayedError(400, "pubkey must be 64 hex characters");
+    // https, or plain http to this machine for development.
+    if (wake !== undefined && (typeof wake !== "string" || !/^(?:https:\/\/|http:\/\/(?:localhost|127\.0\.0\.1)[:/])[^\s]+$/.test(wake))) throw new OkayedError(400, "wake must be an https URL");
     const a: PairedApprover = { pubkey, name: typeof name === "string" && name.trim() ? name.trim().slice(0, 40) : "Approver app", createdAt: this.d.clock.now() };
+    if (typeof wake === "string") a.wake = wake;
     await this.d.store.transaction(async (tx) => {
       await tx.put("approvers", [...(await this.approvers(tx)).filter((x) => x.pubkey !== pubkey), a]);
       await this.audit(tx, { type: "approver", text: `Paired ${a.name} for approvals.` });

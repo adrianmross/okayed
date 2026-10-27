@@ -9,6 +9,7 @@ export * from "./prompts.ts";
 export * from "./heuristic.ts";
 export * from "./openai.ts";
 export * from "./github.ts";
+export * from "./deploy.ts";
 export * from "./approvers.ts";
 export * from "./passkeys.ts";
 export * from "./demo.ts";

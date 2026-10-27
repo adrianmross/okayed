@@ -39,6 +39,8 @@ export interface PairedApprover {
   pubkey: string;
   name: string;
   createdAt: number;
+  /** Where to nudge the app when something waits (an empty POST), if it wants waking. */
+  wake?: string;
 }
 
 /** What a pushed approver is shown: enough to render the card, plus the binding it must sign. */
