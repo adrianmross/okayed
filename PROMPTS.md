@@ -193,3 +193,18 @@ limits, Analytics Engine, Queues, an R2 archive, Whisper voice and real deploys 
 - `feat(web): approval buttons, timed rules, voice, and the Connect screen`
 - `test: OAuth and MCP end to end, queue and archive checks, hold and slide in the browser`
 - `docs: describe okayed on Cloudflare end to end, and the approval buttons`
+
+## 10. A platform-neutral core
+
+```text
+Keep the core platform-agnostic, so we can hook this up to many things and approve a wide range of capabilities and
+actions with different auth flows.
+```
+
+- `feat: make the core platform-neutral: identity, connectors and the HTTP API`
+- `feat(engine): capability packs, so any service's actions can be approved`
+- `feat(design): show registered actions with the engine's words`
+- `feat(node): run okayed on Node, from the same core`
+- `feat: approve any service's actions, end to end`
+- `feat(web): trust a CI workflow, and work with any registered action`
+- `docs: describe the platform-neutral core: runtimes, packs, connectors, identity`
