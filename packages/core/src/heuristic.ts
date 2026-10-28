@@ -40,10 +40,11 @@ export class HeuristicDrafter implements Drafter {
 /** Uses `primary`, falling back to `fallback` when it throws or returns something unusable. */
 export class FallbackDrafter implements Drafter {
   readonly name: string;
-  constructor(
-    private primary: Drafter,
-    private fallback: Drafter = new HeuristicDrafter(),
-  ) {
+  private readonly primary: Drafter;
+  private readonly fallback: Drafter;
+  constructor(primary: Drafter, fallback: Drafter = new HeuristicDrafter()) {
+    this.primary = primary;
+    this.fallback = fallback;
     this.name = `${primary.name} (fallback: ${fallback.name})`;
   }
 

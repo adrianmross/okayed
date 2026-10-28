@@ -85,7 +85,10 @@ function slug(s: string): string {
  * store only. Model calls happen outside transactions; decisions inside them are the engine's.
  */
 export class OkayedService implements FlowTarget {
-  constructor(private d: ServiceDeps) {}
+  private readonly d: ServiceDeps;
+  constructor(d: ServiceDeps) {
+    this.d = d;
+  }
 
   get userId(): string {
     return this.d.userId;
@@ -113,6 +116,11 @@ export class OkayedService implements FlowTarget {
       await tx.put<Targets>("targets", { repos: [], prs: [], sites: [], agents: [] });
       return token;
     });
+  }
+
+  /** Whether this person's okayed has been claimed. */
+  async exists(): Promise<boolean> {
+    return !!(await this.d.store.get<Meta>("meta"));
   }
 
   async isOwner(token: string | null | undefined): Promise<boolean> {
