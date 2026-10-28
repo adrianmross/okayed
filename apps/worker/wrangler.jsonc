@@ -53,7 +53,8 @@
     "MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     // Other origins the web app may be served from (the Worker's own origin always counts); passkeys bind to them.
     "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174"
-    // Optional: "AI_GATEWAY" (an AI Gateway id), "ACCESS_TEAM" and "ACCESS_AUD" (Cloudflare Access),
+    // Optional: "CAPABILITY_PACKS" (e.g. "slack,email,cloudflare-dns,aws-s3"), "AI_GATEWAY" (an AI Gateway id),
+    // "ACCESS_TEAM" and "ACCESS_AUD" (Cloudflare Access), "OIDC_ISSUER" and "OIDC_AUDIENCE" (any OIDC provider),
     // "CF_ACCOUNT_ID" and "CF_PAGES_SITES" (real deploys), "DEMO": "0".
   },
   // Secrets (wrangler secret put): ISSUER_SECRET (64 hex chars); optional GITHUB_TOKEN, TURNSTILE_SECRET,
@@ -83,7 +84,7 @@
       },
       // Locally R2 is simulated, so the archive is on.
       "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "okayed-events" }],
-      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:8787" }
+      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:8787", "CAPABILITY_PACKS": "slack,email,cloudflare-dns,aws-s3" }
     }
   }
 }

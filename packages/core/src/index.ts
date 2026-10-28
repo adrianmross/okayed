@@ -12,5 +12,6 @@ export * from "./approvers.ts";
 export * from "./connectors.ts";
 export * from "./http.ts";
 export * from "./identity.ts";
+export * from "./packs.ts";
 export * from "./passkeys.ts";
 export * from "./demo.ts";

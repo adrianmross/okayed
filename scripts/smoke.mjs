@@ -92,6 +92,17 @@ await call("POST", `${u}/approvals`, null, { event: signEvent(answerTemplate({ v
 const g5 = await call("GET", `${u}/requests/${s5.request.id}?wait=10`, agentToken);
 check(g5.status === "granted" && JSON.parse(g5.grant.content).assurance.method === "approver", "the app's signed answer issues the grant, with its proof");
 
+// Any service's actions, from a capability pack: an agent asks to post to Slack; the person okays it in words.
+const packs = (await call("GET", `${u}/state`, ownerToken)).packs ?? [];
+if (packs.some((p) => p.id === "slack")) {
+  const post = await call("POST", `${u}/requests`, agentToken, { act: "slack.message.post", res: ["slack:acme/releases"], why: "release notes" });
+  const okay = await call("POST", `${u}/chat`, ownerToken, { text: "yes, post it" });
+  check(okay.kind === "grant" && okay.draft.res[0] === "slack:acme/releases", `a custom action binds like a built-in one: ${okay.sentence}`);
+  await call("POST", `${u}/cards/${okay.id}/confirm`, ownerToken);
+  const posted = await call("GET", `${u}/requests/${post.request.id}?wait=10`, agentToken);
+  check(posted.status === "granted" && JSON.parse(posted.grant.content).act === "slack.message.post", "and is granted, signed, for that channel only");
+}
+
 if (cloudflare) {
 // A paired app with a wake URL is nudged through Cloudflare Queues; the nudge carries nothing.
 const { createServer } = await import("node:http");
