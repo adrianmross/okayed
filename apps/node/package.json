@@ -1,0 +1,23 @@
+{
+  "name": "@okayed/node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "okayed on Node: the same core and API as the Cloudflare Worker, on SQLite and in-process timers.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@okayed/connectors": "workspace:*",
+    "@okayed/core": "workspace:*",
+    "@okayed/grant": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}

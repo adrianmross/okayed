@@ -20,6 +20,10 @@ function check(cond, what) {
   if (!cond) process.exitCode = 1;
 }
 
+// The same checks run on any runtime; a few cover Cloudflare's own pieces and only run there.
+const info = await (await fetch(`${BASE}/api`)).json();
+const cloudflare = info.runtime !== "node";
+console.log(`runtime: ${info.runtime ?? "cloudflare"}`);
 const { userId, ownerToken } = await call("POST", "/api/users");
 const u = `/api/u/${userId}`;
 const { id: agent, token: agentToken } = await call("POST", `${u}/agents`, ownerToken, { name: "assistant" });
@@ -88,6 +92,7 @@ await call("POST", `${u}/approvals`, null, { event: signEvent(answerTemplate({ v
 const g5 = await call("GET", `${u}/requests/${s5.request.id}?wait=10`, agentToken);
 check(g5.status === "granted" && JSON.parse(g5.grant.content).assurance.method === "approver", "the app's signed answer issues the grant, with its proof");
 
+if (cloudflare) {
 // A paired app with a wake URL is nudged through Cloudflare Queues; the nudge carries nothing.
 const { createServer } = await import("node:http");
 const woken = [];
@@ -121,6 +126,7 @@ async function socketTypes(token) {
 check(!(await socketTypes(null)).includes("cf_agent_state"), "no state over the socket without a token");
 check(!(await socketTypes("own_wrong")).includes("cf_agent_state"), "no state over the socket with a wrong token");
 check((await socketTypes(ownerToken)).includes("cf_agent_state"), "the owner's socket gets live state");
+}
 
 const state = await call("GET", `${u}/state`, ownerToken);
 check(state.audit.length > 0, `audit has ${state.audit.length} entries`);

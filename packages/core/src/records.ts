@@ -4,11 +4,10 @@ import type { Grant, NostrEvent } from "@okayed/grant";
 /** Everything okayed stores for one person, and the snapshot their browser sees. */
 
 export class OkayedError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
+  readonly status: number;
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 

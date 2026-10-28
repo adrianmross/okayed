@@ -41,7 +41,10 @@ export class MemoryStore implements Store {
 /** A clock tests move by hand. Timers fire in order when time passes them. */
 export class ManualClock implements Clock {
   private timers: { at: number; fire: () => void }[] = [];
-  constructor(private t: number) {}
+  private t: number;
+  constructor(t: number) {
+    this.t = t;
+  }
   now(): number {
     return this.t;
   }
@@ -89,7 +92,9 @@ export const cryptoRandom: Randomness = {
 
 export class KeySigner implements Signer {
   readonly pubkey: string;
-  constructor(private sk: Uint8Array) {
+  private readonly sk: Uint8Array;
+  constructor(sk: Uint8Array) {
+    this.sk = sk;
     this.pubkey = publicKeyOf(sk);
   }
   static forUser(serviceSecretHex: string, userId: string): KeySigner {
@@ -110,7 +115,10 @@ export class InlineLifecycle implements Lifecycle {
   readonly outcomes = new Map<string, string>();
   target!: FlowTarget;
 
-  constructor(private clock: ManualClock | { at?: undefined; now(): number }) {}
+  private readonly clock: ManualClock | { at?: undefined; now(): number };
+  constructor(clock: ManualClock | { at?: undefined; now(): number }) {
+    this.clock = clock;
+  }
 
   async start(id: string, params: FlowParams): Promise<void> {
     const rt: FlowRuntime = {
