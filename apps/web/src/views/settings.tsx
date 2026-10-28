@@ -7,7 +7,7 @@ import { Input } from "@okayed/design/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@okayed/design/ui/item";
 import { Spinner } from "@okayed/design/ui/spinner";
 import { DEFAULT_POSTURE, type Rule } from "@okayed/engine";
-import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, ScanFaceIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, ScanFaceIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Page, Section } from "../components/page";
@@ -87,14 +87,18 @@ export function SettingsView() {
           </div>
         </Section>
 
-        <Section title="Agents" description="Agents that can ask you for permission. The assistant is the one in Chat; connect your own over MCP." action={<ConnectAgent />}>
+        <Section title="Agents" description="Agents that can ask you for permission. The assistant is the one in Chat; connect your own over MCP." action={<div className="flex gap-2"><TrustWorkload /><ConnectAgent /></div>}>
           <div className="space-y-2">
             {[...new Set(["agent:assistant", ...snap.targets.agents, ...snap.agents.map((a) => a.id)])].map((id) => (
               <Item key={id} variant="outline" className="bg-card">
                 <ItemMedia><AgentAvatar agent={id} /></ItemMedia>
                 <ItemContent>
                   <ItemTitle>{agentName(id)}</ItemTitle>
-                  <ItemDescription>{snap.agents.some((a) => a.id === id) ? "Connected with a token" : "The demo assistant in Chat"}</ItemDescription>
+                  <ItemDescription>{(() => {
+                    const a = snap.agents.find((x) => x.id === id);
+                    if (!a) return "The demo assistant in Chat";
+                    return a.workload ? `Proves itself as ${a.workload.subject}, from ${new URL(a.workload.issuer).hostname}` : "Connected with a token";
+                  })()}</ItemDescription>
                 </ItemContent>
                 {snap.agents.some((a) => a.id === id) && (
                   <ItemActions><Button size="sm" variant="ghost" onClick={() => okayed.run("DELETE", `/agents/${encodeURIComponent(id)}`, undefined, "Agent disconnected.")}>Disconnect</Button></ItemActions>
@@ -176,6 +180,49 @@ function ApprovalButtons() {
         />
       </div>
     </Section>
+  );
+}
+
+const GITHUB_ACTIONS = "https://token.actions.githubusercontent.com";
+
+/**
+ * Trust a CI workflow (or any workload) to act as an agent by the identity token its platform gives it: nothing to
+ * store in CI, and the token lives minutes.
+ */
+function TrustWorkload() {
+  const okayed = useOkayed();
+  const [open, setOpen] = useState(false);
+  const [issuer, setIssuer] = useState(GITHUB_ACTIONS);
+  const [subject, setSubject] = useState("");
+  const [name, setName] = useState("");
+  const audience = okayed.session.api;
+  const save = async () => {
+    if ((await okayed.run("POST", "/trusts", { issuer, subject, audience, name: name || undefined }, "Trusted. It can ask for permission now.")) !== undefined) setOpen(false);
+  };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button variant="outline" size="sm"><ShieldCheckIcon />Trust a workflow</Button></DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Trust a workflow</DialogTitle>
+          <DialogDescription>A CI job proves who it is with a short-lived token from its platform, so there's no secret to store. It becomes one of your agents and asks like any other.</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-3" onSubmit={(e) => (e.preventDefault(), void save())}>
+          <ToggleGroup type="single" variant="outline" size="sm" value={issuer === GITHUB_ACTIONS ? "gha" : "other"} onValueChange={(v) => v && setIssuer(v === "gha" ? GITHUB_ACTIONS : "https://")}>
+            <ToggleGroupItem value="gha">GitHub Actions</ToggleGroupItem>
+            <ToggleGroupItem value="other">Another OIDC issuer</ToggleGroupItem>
+          </ToggleGroup>
+          {issuer !== GITHUB_ACTIONS && <Input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="https://issuer.example" aria-label="Issuer" />}
+          <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={issuer === GITHUB_ACTIONS ? "repo:owner/name:ref:refs/heads/main" : "the token's subject (* for any run of characters)"} aria-label="Subject" className="font-mono text-xs" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Agent name, e.g. release workflow" aria-label="Agent name" />
+          <p className="text-muted-foreground text-xs">
+            In the workflow, ask for an ID token with the audience <span className="font-mono">{audience}</span> and send it as the bearer token.
+            {issuer === GITHUB_ACTIONS && " It needs permissions: id-token: write."}
+          </p>
+          <Button type="submit" disabled={!subject.trim() || !/^https:\/\/\S+/.test(issuer)}>Trust it</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

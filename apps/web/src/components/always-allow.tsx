@@ -15,6 +15,7 @@ export function useEditorWorld(): EditorWorld | null {
     budgets: snap.policy.budgets,
     usage: snap.usage,
     now: snap.now,
+    ...(snap.targets.named ? { named: snap.targets.named } : {}),
   };
 }
 
