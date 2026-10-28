@@ -36,6 +36,13 @@ export interface Env {
   /** Cloudflare Access: the team name (<team>.cloudflareaccess.com) and the application's AUD tag. */
   ACCESS_TEAM?: string;
   ACCESS_AUD?: string;
+  /** Any other OIDC provider whose ID token, sent as the bearer token, stands in for the owner token. */
+  OIDC_ISSUER?: string;
+  OIDC_AUDIENCE?: string;
+  /** A GitHub App for merges: tokens minted per call for one repository (preferred over GITHUB_TOKEN). */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_KEY?: string;
+  GITHUB_APP_INSTALLATION?: string;
   /** Turnstile on account creation. */
   TURNSTILE_SECRET?: string;
   /** Workers rate limiting: sign-ups per address, requests per agent. */

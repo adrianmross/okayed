@@ -9,34 +9,53 @@ import {
   OkayedService,
   OpenAICompatibleDrafter,
   SystemClock,
+  cloudflareAccess,
   cryptoRandom,
-  deployWithGrant,
-  mergeWithGrant,
-  prHead,
+  handleApi,
+  oidcBearer,
+  personOf,
+  staticCredential,
+  type Connector,
   type Drafter,
   type FlowEvent,
   type FlowParams,
   type Lifecycle,
-  type MergeInput,
+  type PersonIssuer,
   type RelyingParty,
   type Snapshot,
 } from "@okayed/core";
+import { cloudflarePagesDeploy, cloudflareToken, githubAppCredential, githubMerge, prHead } from "@okayed/connectors";
 import { parseRes } from "@okayed/engine";
-import { KIND, sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
+import { sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
-import { CloudflarePagesDeployer } from "./cloudflare.ts";
 import { QueueNotifier } from "./notify.ts";
 import type { Env } from "./env.ts";
 
 export type ApiReply = { status: number; body: unknown };
 
-/** Methods the HTTP router may call, by who is calling. */
-const OWNER = ["archive", "transcribe", "passkeyOptions", "addPasskey", "removePasskey", "approvalChallenge", "confirmWithPasskey", "snapshot", "chat", "confirm", "deny", "revoke", "stop", "resume", "addAgent", "removeAgent", "setTargets", "removeRule", "setRules", "setBudgets", "topUp", "events", "pairApprover", "unpairApprover"] as const;
-const AGENT = ["submitRequest", "requestStatus", "merge", "deploy"] as const;
-const PUBLIC = ["verify", "issuer", "inbox", "answer"] as const;
-export type OwnerMethod = (typeof OWNER)[number];
-export type AgentMethod = (typeof AGENT)[number];
-export type PublicMethod = (typeof PUBLIC)[number];
+/** Who can stand in for the owner token: Cloudflare Access, or any OIDC provider, when configured. */
+export function issuersFor(env: Env): PersonIssuer[] {
+  const out: PersonIssuer[] = [];
+  if (env.ACCESS_TEAM && env.ACCESS_AUD) out.push(cloudflareAccess(env.ACCESS_TEAM, env.ACCESS_AUD));
+  if (env.OIDC_ISSUER && env.OIDC_AUDIENCE) out.push(oidcBearer(env.OIDC_ISSUER, env.OIDC_AUDIENCE));
+  return out;
+}
+
+/** The tools this deployment can act through, from its configuration. */
+function connectorsFor(env: Env): Connector<any>[] {
+  const out: Connector<any>[] = [];
+  const github = env.GITHUB_APP_ID && env.GITHUB_APP_KEY && env.GITHUB_APP_INSTALLATION
+    ? githubAppCredential({ appId: env.GITHUB_APP_ID, privateKey: env.GITHUB_APP_KEY, installationId: env.GITHUB_APP_INSTALLATION, permissions: { pull_requests: "write", contents: "write", checks: "read" } })
+    : env.GITHUB_TOKEN
+      ? staticCredential(env.GITHUB_TOKEN)
+      : null;
+  if (github) out.push(githubMerge({ credential: github }));
+  if (env.CF_ACCOUNT_ID && env.CF_API_TOKEN && env.CF_PAGES_SITES) {
+    const credential = cloudflareToken({ accountId: env.CF_ACCOUNT_ID, token: env.CF_API_TOKEN, permissions: [env.CF_PAGES_WRITE_GROUP ?? "Pages Write"] });
+    out.push(cloudflarePagesDeploy({ accountId: env.CF_ACCOUNT_ID, sites: JSON.parse(env.CF_PAGES_SITES), credential }));
+  }
+  return out;
+}
 
 /**
  * One person's okayed, as an Agents SDK agent: a Durable Object named by the user id. It holds policy,
@@ -162,123 +181,35 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     return this.svc.agentFor(token);
   }
 
-  async ownerApi(method: OwnerMethod, args: unknown[]): Promise<ApiReply> {
-    if (!OWNER.includes(method)) return { status: 404, body: { error: "no such method" } };
-    const s = this.svc;
-    const a = args as never[];
-    switch (method) {
-      case "snapshot":
-        return this.reply(() => s.snapshot());
-      case "transcribe":
-        return this.reply(() => this.transcribe(a[0]));
-      case "archive":
-        return this.reply(() => this.archived());
-      case "passkeyOptions":
-        return this.reply(async () => s.passkeyOptions(this.rp(a[0])));
-      case "addPasskey":
-        return this.reply(async () => s.addPasskey(this.rp(a[0]), a[1], typeof a[2] === "string" ? a[2] : undefined), 201);
-      case "removePasskey":
-        return this.reply(() => s.removePasskey(String(a[0])));
-      case "approvalChallenge":
-        return this.reply(async () => s.approvalChallenge(String(a[0]), this.rp(a[1])));
-      case "confirmWithPasskey":
-        return this.reply(async () => s.confirmWithPasskey(String(a[0]), this.rp(a[1]), a[2]));
-      case "chat":
-        return this.reply(() => s.chat(String(a[0] ?? "")));
-      case "confirm":
-        return this.reply(() => s.confirm(String(a[0]), "web-click"));
-      case "deny":
-        return this.reply(() => s.deny(String(a[0])));
-      case "revoke":
-        return this.reply(() => s.revoke(String(a[0]), typeof a[1] === "string" && a[1] ? a[1] : undefined));
-      case "stop":
-        return this.reply(async () => ({ revoked: await s.stop(typeof a[0] === "string" && a[0] ? a[0] : undefined) }));
-      case "resume":
-        return this.reply(() => s.resume());
-      case "addAgent":
-        return this.reply(() => s.addAgent(String(a[0] ?? "agent")), 201);
-      case "removeAgent":
-        return this.reply(() => s.removeAgent(String(a[0])));
-      case "setTargets":
-        return this.reply(() => s.setTargets((a[0] ?? {}) as never));
-      case "removeRule":
-        return this.reply(() => s.removeRule(String(a[0])));
-      case "setRules":
-        return this.reply(() => s.setRules(a[0]));
-      case "setBudgets":
-        return this.reply(() => s.setBudgets(a[0]));
-      case "topUp":
-        return this.reply(() => s.topUp(String(a[0])));
-      case "events":
-        return this.reply(() => s.events());
-      case "pairApprover":
-        return this.reply(() => s.pairApprover(a[0], a[1], a[2] ?? undefined), 201);
-      case "unpairApprover":
-        return this.reply(() => s.unpairApprover(String(a[0])));
-    }
+  /** Mints an agent for an OAuth client the person just allowed (the Connect screen). */
+  async mintAgent(name: string): Promise<{ id: string; token: string }> {
+    const out = await this.svc.addAgent(name);
+    await this.broadcastSnapshot();
+    return out;
   }
 
-  async agentApi(agentId: string, method: AgentMethod, args: unknown[]): Promise<ApiReply> {
-    if (!AGENT.includes(method)) return { status: 404, body: { error: "no such method" } };
-    const s = this.svc;
-    switch (method) {
-      case "submitRequest":
-        return this.reply(async () => {
-          const input = (args[0] ?? {}) as { act?: unknown; res?: unknown; why?: unknown; ttl?: unknown };
-          await this.checkHeads(input);
-          const out = await s.submitRequest(agentId, input);
-          this.metric("request", out.status, out.request.act);
-          return out;
-        }, 202);
-      case "requestStatus":
-        return this.reply(async () => {
-          const id = String(args[0]);
-          const wait = Math.min(Math.max(Number(args[1]) || 0, 0), 20);
-          const deadline = Date.now() + wait * 1000;
-          for (;;) {
-            const st = await s.requestStatus(agentId, id);
-            if (!st) throw new OkayedError(404, "no such request");
-            if (st.status !== "pending" || Date.now() >= deadline) return st;
-            await new Promise((r) => setTimeout(r, 500));
-          }
-        });
-      case "merge":
-        return this.reply(async () => {
-          const input = { ...(args[0] as MergeInput), aud: agentId };
-          const out = await mergeWithGrant(s, { github: async () => this.env.GITHUB_TOKEN ?? null }, input);
-          if (!out.ok) throw new OkayedError(out.stage === "config" ? 501 : out.stage === "github" ? 502 : 403, out.reason);
-          return out;
-        });
-      case "deploy":
-        return this.reply(async () => {
-          const deployer = this.deployer();
-          if (!deployer) throw new OkayedError(501, "real deploys aren't configured here (CF_ACCOUNT_ID, CF_API_TOKEN, CF_PAGES_SITES)");
-          const b = (args[0] ?? {}) as { grant?: unknown; site?: unknown; env?: unknown };
-          const out = await deployWithGrant(s, deployer, { grant: b.grant, aud: agentId, host: String(b.site ?? ""), env: String(b.env ?? "") });
-          this.metric("deploy", out.ok ? "deployed" : out.stage, "site.deploy");
-          if (!out.ok) throw new OkayedError(out.stage === "deploy" ? 502 : 403, out.reason);
-          return out;
-        });
-    }
-  }
-
-  async openApi(method: PublicMethod, args: unknown[]): Promise<ApiReply> {
-    if (!PUBLIC.includes(method)) return { status: 404, body: { error: "no such method" } };
-    if (method === "issuer") return this.reply(async () => ({ issuer: this.svc.issuer, kinds: KIND }));
-    // Approver apps authenticate themselves: a NIP-98 signature to read the inbox, a signed answer to reply.
-    if (method === "inbox") return this.reply(() => this.svc.inbox(typeof args[0] === "string" ? args[0] : null, String(args[1])));
-    if (method === "answer") return this.reply(() => this.svc.answer(args[0]));
-    return this.reply(async () => {
-      const body = (args[0] ?? {}) as { event?: unknown; grantId?: unknown; aud?: unknown; act?: unknown; res?: unknown; consume?: unknown; facts?: unknown };
-      if (typeof body.aud !== "string" || typeof body.act !== "string" || typeof body.res !== "string") {
-        throw new OkayedError(400, "verify needs aud, act and res");
-      }
-      if (body.consume === true && body.event === undefined) throw new OkayedError(400, "spending a use needs the grant event, not just its id");
-      const input: Parameters<OkayedService["verify"]>[0] = { aud: body.aud, act: body.act, res: body.res, consume: body.consume === true };
-      if (body.event !== undefined) input.event = body.event;
-      if (typeof body.grantId === "string") input.grantId = body.grantId;
-      if (body.facts && typeof body.facts === "object") input.facts = body.facts as never;
-      return this.svc.verify(input);
+  /**
+   * The person's HTTP API: okayed core's platform-neutral handler, with Cloudflare's pieces as hooks: Access as proof
+   * of the person, connectors for real actions, rate limits, metrics, voice and the R2 archive.
+   */
+  async api(req: Request): Promise<Response> {
+    const path = /^\/api\/u\/[0-9a-f]{32}(\/.*)$/.exec(new URL(req.url).pathname)?.[1] ?? "/";
+    return handleApi(this.svc, req, path, {
+      connectors: connectorsFor(this.env),
+      relyingParty: (o, r) => this.rp(o, r),
+      isOwner: async (r) => (await personOf(r, issuersFor(this.env)))?.userId === this.name,
+      allowAgent: async (agent) => !this.env.AGENT_LIMIT || (await this.env.AGENT_LIMIT.limit({ key: `${this.name}:${agent}` })).success,
+      beforeRequest: (input) => this.checkHeads(input),
+      extra: async (route, { body }) => {
+        if (route === "POST /transcribe") return this.transcribe(body.audio);
+        if (route === "GET /archive") return this.archived();
+        return undefined;
+      },
+      changed: async () => {
+        await this.broadcastSnapshot();
+        await this.archiveSoon();
+      },
+      observe: (kind, outcome, act) => this.metric(kind, outcome, act),
     });
   }
 
@@ -297,14 +228,13 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   }
 
   /**
-   * The relying party for a passkey ceremony: only origins this deployment serves its web app from. The Worker's own
-   * origin always counts; the router marks it, since only the router sees the request URL.
+   * The relying party for a passkey ceremony: only origins this deployment serves its web app from, the Worker's own
+   * origin first.
    */
-  private rp(o: unknown): RelyingParty {
-    const same = typeof o === "object" && o !== null && (o as { same?: unknown }).same === true;
-    const origin = same ? (o as { origin: unknown }).origin : o;
-    const allowed = (this.env.WEB_ORIGINS ?? "http://localhost:5173,http://localhost:5174").split(",").map((x) => x.trim()).filter(Boolean);
-    if (typeof origin !== "string" || (!same && !allowed.includes(origin))) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);
+  private rp(origin: unknown, req: Request): RelyingParty {
+    const own = new URL(req.url).origin;
+    const allowed = [own, ...(this.env.WEB_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean)];
+    if (typeof origin !== "string" || !allowed.includes(origin)) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);
     return { origin, rpID: new URL(origin).hostname, rpName: "okayed" };
   }
 
@@ -349,12 +279,6 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     if (typeof audio !== "string" || !audio || audio.length > 8_000_000) throw new OkayedError(400, "send audio as base64, up to about 6 MB");
     const out = (await this.env.AI.run("@cf/openai/whisper-large-v3-turbo" as keyof AiModels, { audio } as never, this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : undefined)) as { text?: string };
     return { text: (out.text ?? "").trim() };
-  }
-
-  private deployer(): CloudflarePagesDeployer | null {
-    const { CF_ACCOUNT_ID: account, CF_API_TOKEN: token, CF_PAGES_SITES: sites } = this.env;
-    if (!account || !token || !sites) return null;
-    return new CloudflarePagesDeployer({ accountId: account, token, sites: JSON.parse(sites), ...(this.env.CF_PAGES_WRITE_GROUP ? { permissionGroup: this.env.CF_PAGES_WRITE_GROUP } : {}) });
   }
 
   // ---------- RPC from the demo chat (Assistant's tools) ----------
