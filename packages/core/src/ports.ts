@@ -85,8 +85,3 @@ export interface FlowParams {
   /** Set when policy auto-approved: issue without waiting. */
   auto: boolean;
 }
-
-/** Swaps a live grant for the real credential at the moment of use. The agent never sees it. */
-export interface Vault {
-  github(): Promise<string | null>;
-}

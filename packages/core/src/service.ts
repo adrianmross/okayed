@@ -37,6 +37,7 @@ import {
 } from "@okayed/grant";
 import { chatCard, draftOf, grantCard } from "./cards.ts";
 import type { FlowTarget } from "./flow.ts";
+import { agentForWorkload, type WorkloadTrust } from "./identity.ts";
 import { bindingFor, readAnswer, readHttpAuth, type ApprovalBinding, type Notifier, type PairedApprover, type PushedApproval } from "./approvers.ts";
 import { approvalOptions, registrationOptions, verifyApproval, verifyRegistration, type RelyingParty, type StoredPasskey } from "./passkeys.ts";
 import type { Clock, DraftContext, Drafter, Lifecycle, Randomness, Signer, Store } from "./ports.ts";
@@ -66,6 +67,8 @@ export interface ServiceDeps {
   random: Randomness;
   /** Wakes paired approver apps when an approval is waiting for them. Optional: they can also just poll. */
   notifier?: Notifier;
+  /** For fetching identity providers' keys; the global fetch by default. */
+  fetch?: typeof fetch;
 }
 
 const AUDIT_MAX = 300;
@@ -120,16 +123,36 @@ export class OkayedService implements FlowTarget {
 
   async addAgent(name: string): Promise<{ id: string; token: string }> {
     const token = `agt_${this.d.random.hex(24)}`;
+    const id = await this.newAgent(name, { tokenHash: sha256Hex(token) });
+    return { id, token };
+  }
+
+  /**
+   * Trusts a workload to act as a new agent by the identity token its platform issues (GitHub Actions, Kubernetes, a
+   * cloud): no okayed token to store in CI. `subject` may use `*`.
+   */
+  async trustWorkload(input: { issuer?: unknown; subject?: unknown; audience?: unknown; name?: unknown }): Promise<{ id: string }> {
+    const { issuer, subject, audience, name } = input;
+    if (typeof issuer !== "string" || !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(issuer)) throw new OkayedError(400, "issuer must be an https URL");
+    if (typeof subject !== "string" || !subject.trim() || subject.length > 300) throw new OkayedError(400, "subject is required (use * for any run of characters)");
+    if (subject.trim() === "*") throw new OkayedError(400, "a subject of just * would trust every workload of that issuer");
+    if (typeof audience !== "string" || !audience.trim()) throw new OkayedError(400, "audience is required");
+    const label = typeof name === "string" && name.trim() ? name.trim() : new URL(issuer).hostname.split(".")[1] ?? "workload";
+    return { id: await this.newAgent(label, { tokenHash: "", workload: { issuer: issuer.replace(/\/$/, ""), subject: subject.trim(), audience: audience.trim() } }) };
+  }
+
+  private async newAgent(name: string, how: Pick<AgentRecord, "tokenHash" | "workload">): Promise<string> {
     return this.d.store.transaction(async (tx) => {
       const existing = await tx.list<AgentRecord>("agent:");
       let id = `agent:${slug(name)}`;
       for (let i = 2; existing.has(id); i++) id = `agent:${slug(name)}-${i}`;
-      await tx.put<AgentRecord>(id, { id, name: name.slice(0, 64), tokenHash: sha256Hex(token), createdAt: this.d.clock.now() });
+      await tx.put<AgentRecord>(id, { id, name: name.slice(0, 64), ...how, createdAt: this.d.clock.now() });
       const t = await this.targets(tx);
       t.agents = [...new Set([...t.agents, id])];
       await tx.put("targets", t);
-      await this.audit(tx, { type: "agent", text: `Added agent ${id}.`, ref: id });
-      return { id, token };
+      const w = how.workload;
+      await this.audit(tx, { type: "agent", text: w ? `Trusted ${w.subject} from ${w.issuer} as agent ${id}.` : `Added agent ${id}.`, ref: id });
+      return id;
     });
   }
 
@@ -143,11 +166,15 @@ export class OkayedService implements FlowTarget {
     });
   }
 
+  /** The agent a bearer token belongs to: one of okayed's agent tokens, or a trusted workload's identity token. */
   async agentFor(token: string | null | undefined): Promise<string | null> {
     if (!token) return null;
+    const agents = [...(await this.d.store.list<AgentRecord>("agent:")).values()];
     const h = sha256Hex(token);
-    for (const a of (await this.d.store.list<AgentRecord>("agent:")).values()) if (a.tokenHash === h) return a.id;
-    return null;
+    for (const a of agents) if (a.tokenHash && a.tokenHash === h) return a.id;
+    if (token.split(".").length !== 3) return null;
+    const trusts: WorkloadTrust[] = agents.flatMap((a) => (a.workload ? [{ ...a.workload, agent: a.id }] : []));
+    return trusts.length ? agentForWorkload(token, trusts, this.d.fetch) : null;
   }
 
   async setTargets(t: Partial<Pick<Targets, "repos" | "sites">>): Promise<Targets> {

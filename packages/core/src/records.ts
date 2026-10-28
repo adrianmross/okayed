@@ -25,8 +25,11 @@ export interface Meta {
 export interface AgentRecord {
   id: string;
   name: string;
+  /** Empty for an agent that proves itself with a workload identity token instead. */
   tokenHash: string;
   createdAt: number;
+  /** The workload identity this agent is: its issuer, subject pattern and audience. */
+  workload?: { issuer: string; subject: string; audience: string };
 }
 
 export type RequestStatus = "pending" | "granted" | "denied" | "expired";
@@ -134,7 +137,7 @@ export interface Snapshot {
   grants: (GrantRecord & { sentence: string })[];
   audit: AuditEntry[];
   chat: ChatMessage[];
-  agents: { id: string; name: string; createdAt: number }[];
+  agents: { id: string; name: string; createdAt: number; workload?: { issuer: string; subject: string; audience: string } }[];
   targets: Targets;
   /** What each standing policy has spent, by rule id. */
   usage: Usage;

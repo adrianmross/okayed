@@ -1,5 +1,4 @@
 import { getAgentByName } from "agents";
-import type { ApiReply } from "./agent.ts";
 import type { Env } from "./env.ts";
 
 /**
@@ -39,9 +38,7 @@ export async function consent(req: Request, env: Env): Promise<Response> {
     if (!(await stub.isOwner(token))) return Response.json({ error: "unauthorized" }, { status: 401 });
     const approved = await oauth.approveConsent(req, handle);
     const client = await oauth.lookupClient(approved.request.clientId);
-    const minted = (await stub.ownerApi("addAgent", [client?.clientName ?? "mcp client"])) as unknown as ApiReply;
-    if (minted.status !== 201) return Response.json(minted.body, { status: minted.status });
-    const agent = minted.body as { id: string; token: string };
+    const agent = (await stub.mintAgent(client?.clientName ?? "mcp client")) as { id: string; token: string };
     const { redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: user,

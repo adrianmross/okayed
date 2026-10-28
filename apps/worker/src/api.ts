@@ -1,6 +1,6 @@
 import { getAgentByName, routeAgentRequest } from "agents";
-import type { AgentMethod, ApiReply, OwnerMethod } from "./agent.ts";
-import { accessIdentity, userForIdentity } from "./access.ts";
+import { personOf } from "@okayed/core";
+import { issuersFor, type ApiReply } from "./agent.ts";
 import { consent } from "./consent.ts";
 import type { Env } from "./env.ts";
 
@@ -40,11 +40,10 @@ async function body(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** With Cloudflare Access in front, the okayed user the person's Access identity owns; otherwise null. */
+/** With Cloudflare Access (or another OIDC provider) in front, the okayed the person's identity owns; otherwise null. */
 async function accessUser(req: Request, env: Env): Promise<string | null> {
-  if (!env.ACCESS_TEAM || !env.ACCESS_AUD) return null;
-  const id = await accessIdentity(req, env.ACCESS_TEAM, env.ACCESS_AUD);
-  return id && !id.commonName ? userForIdentity(env.ACCESS_TEAM, id) : null;
+  const issuers = issuersFor(env);
+  return issuers.length ? ((await personOf(req, issuers))?.userId ?? null) : null;
 }
 
 /** Turnstile's verdict on the token the welcome page sent. */
@@ -158,63 +157,13 @@ export const app = {
       return send(await stub.claim());
     }
 
-    const m = /^\/api\/u\/([0-9a-f]{32})(\/.*)$/.exec(url.pathname);
+    // Everything else belongs to one person: their Durable Object serves okayed core's HTTP API.
+    const m = /^\/api\/u\/([0-9a-f]{32})\//.exec(url.pathname);
     if (!m) return json({ error: "not found" }, 404);
-    const [, userId, rest] = m as unknown as [string, string, string];
-    const stub = await getAgentByName(env.OkayedAgent, userId);
-    const token = bearer(req);
-    const b = await body(req);
-    const route = `${req.method} ${rest}`;
-
-    // Anyone.
-    if (route === "POST /verify") return send(await stub.openApi("verify", [b]));
-    if (route === "GET /issuer") return send(await stub.openApi("issuer", []));
-    if (route === "GET /approvers/inbox") return send(await stub.openApi("inbox", [req.headers.get("authorization"), req.url]));
-    if (route === "POST /approvals") return send(await stub.openApi("answer", [b.event ?? b]));
-
-    // Agents.
-    if (token?.startsWith("agt_")) {
-      const agentId = await stub.agentFor(token);
-      if (!agentId) return json({ error: "unknown agent token" }, 401);
-      if (env.AGENT_LIMIT && !(await env.AGENT_LIMIT.limit({ key: `${userId}:${agentId}` })).success) return json({ error: "too many requests; slow down" }, 429);
-      const call = (method: AgentMethod, args: unknown[]) => (stub.agentApi(agentId, method, args) as unknown as Promise<ApiReply>).then(send);
-      if (route === "POST /requests") return call("submitRequest", [b]);
-      const rq = /^GET \/requests\/(r_[0-9a-f]+)$/.exec(route);
-      if (rq) return call("requestStatus", [rq[1], url.searchParams.get("wait")]);
-      if (route === "POST /tools/github/merge") return call("merge", [b]);
-      if (route === "POST /tools/cloudflare/deploy") return call("deploy", [b]);
-      return json({ error: "not found" }, 404);
-    }
-
-    // The person.
-    if ((await accessUser(req, env)) !== userId && !(await stub.isOwner(token))) return json({ error: "unauthorized" }, 401);
-    // A passkey from the Worker's own origin (the web app it serves) is always this deployment's.
-    const origin = (o: unknown) => (o === url.origin ? { origin: o, same: true } : o);
-    const call = (method: OwnerMethod, args: unknown[] = []) => (stub.ownerApi(method, args) as unknown as Promise<ApiReply>).then(send);
-    if (route === "GET /state") return call("snapshot");
-    if (route === "GET /events") return call("events");
-    if (route === "GET /archive") return call("archive");
-    if (route === "POST /chat") return call("chat", [b.text]);
-    if (route === "POST /stop") return call("stop", [b.reason]);
-    if (route === "POST /resume") return call("resume");
-    if (route === "POST /agents") return call("addAgent", [b.name]);
-    if (route === "PUT /targets") return call("setTargets", [b]);
-    if (route === "PUT /policy") return call("setRules", [b.rules]);
-    if (route === "PUT /budgets") return call("setBudgets", [b.budgets]);
-    if (route === "POST /passkeys/options") return call("passkeyOptions", [origin(b.origin)]);
-    if (route === "POST /passkeys") return call("addPasskey", [origin(b.origin), b.response, b.name]);
-    if (route === "POST /transcribe") return call("transcribe", [b.audio]);
-    if (route === "POST /approvers") return call("pairApprover", [b.pubkey, b.name, b.wake]);
-    let x: RegExpExecArray | null;
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/challenge$/.exec(route))) return call("approvalChallenge", [x[1], origin(b.origin)]);
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/confirm$/.exec(route))) return b.assertion ? call("confirmWithPasskey", [x[1], origin(b.origin), b.assertion]) : call("confirm", [x[1]]);
-    if ((x = /^POST \/cards\/(c_[0-9a-f]+)\/deny$/.exec(route))) return call("deny", [x[1]]);
-    if ((x = /^DELETE \/passkeys\/([A-Za-z0-9_-]+)$/.exec(route))) return call("removePasskey", [x[1]]);
-    if ((x = /^DELETE \/approvers\/([0-9a-f]{64})$/.exec(route))) return call("unpairApprover", [x[1]]);
-    if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(route))) return call("revoke", [x[1], b.reason]);
-    if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decodeURIComponent(route)))) return call("removeAgent", [x[1]]);
-    if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decodeURIComponent(route)))) return call("topUp", [x[1]]);
-    if ((x = /^DELETE \/rules\/(.+)$/.exec(decodeURIComponent(route)))) return call("removeRule", [x[1]]);
-    return json({ error: "not found" }, 404);
+    const stub = await getAgentByName(env.OkayedAgent, m[1]!);
+    const res = (await stub.api(req)) as unknown as Response;
+    const out = new Response(res.body, res);
+    for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v);
+    return out;
   },
 };

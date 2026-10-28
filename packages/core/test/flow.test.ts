@@ -8,7 +8,6 @@ import {
   MemoryStore,
   OkayedService,
   cryptoRandom,
-  mergeWithGrant,
   settle,
   type Drafter,
 } from "../src/index.ts";
@@ -207,47 +206,6 @@ describe("chat", () => {
     await t.svc.setTargets({ sites: [{ host: "openmeadow.org", envs: ["production", "staging"] }, { host: "buzz.dev", envs: ["production"] }] });
     const card = await t.svc.chat("go ahead and deploy the website");
     expect(card).toMatchObject({ kind: "question", question: "Which site?" });
-  });
-});
-
-describe("GitHub demo tool", () => {
-  it("merges with the vault token only under a live grant, and only once", async () => {
-    const calls: { url: string; init?: RequestInit }[] = [];
-    const fakeFetch = (async (url: string, init?: RequestInit) => {
-      calls.push({ url, ...(init ? { init } : {}) });
-      if (url.includes("/check-runs")) return Response.json({ check_runs: [{ status: "completed", conclusion: "success" }] });
-      if (url.endsWith("/merge")) return Response.json({ sha: "merged123", merged: true });
-      return new Response("nope", { status: 404 });
-    }) as typeof fetch;
-    const vault = { github: async () => "ghp_secret" };
-    const { request, cardId } = await t.svc.submitRequest(assistant, { act: "github.pr.merge", res: [PR] });
-    const input = { aud: assistant, owner: "adrianmross", repo: "okayed", number: 182, sha: SHA, grant: null as unknown };
-
-    expect(await mergeWithGrant(t.svc, vault, input, fakeFetch)).toMatchObject({ ok: false, stage: "grant" });
-    expect(calls.some((c) => c.url.endsWith("/merge"))).toBe(false);
-
-    await t.svc.confirm(cardId!);
-    await settle();
-    input.grant = await grantFor(request.id);
-    expect(await mergeWithGrant(t.svc, vault, input, fakeFetch)).toMatchObject({ ok: true, merged: true, left: 0 });
-    const merge = calls.find((c) => c.url.endsWith("/merge"))!;
-    expect(JSON.parse(String(merge.init!.body))).toMatchObject({ sha: SHA });
-    expect(new Headers(merge.init!.headers).get("authorization")).toBe("Bearer ghp_secret");
-    expect(await mergeWithGrant(t.svc, vault, input, fakeFetch)).toMatchObject({ ok: false, stage: "grant", reason: expect.stringMatching(/one use/) });
-  });
-
-  it("does not spend the use when a condition fails", async () => {
-    const red = (async (url: string) =>
-      url.includes("/check-runs") ? Response.json({ check_runs: [{ status: "completed", conclusion: "failure" }] }) : Response.json({ sha: "x" })) as typeof fetch;
-    await t.svc.submitRequest(assistant, { act: "github.pr.merge", res: [PR] });
-    const card = await t.svc.chat("merge #182 once CI passes");
-    await t.svc.confirm(card.id);
-    await settle();
-    const snap = await t.svc.snapshot();
-    const ev = snap.grants[0]!.event;
-    const input = { aud: assistant, owner: "adrianmross", repo: "okayed", number: 182, sha: SHA, grant: ev };
-    expect(await mergeWithGrant(t.svc, { github: async () => "t" }, input, red)).toMatchObject({ ok: false, reason: expect.stringMatching(/checks have not passed/) });
-    expect((await t.svc.snapshot()).grants[0]!.used).toBe(0);
   });
 });
 

@@ -29,7 +29,7 @@ export async function buildSnapshot(
     .map((g) => ({ ...expiredIf(g, g.status === "active" && g.grant.exp <= now), sentence: sentenceFor(draftOf(g.grant)) }))
     .sort((a, b) => b.grant.nbf - a.grant.nbf)
     .slice(0, SHOWN);
-  const agents = (await all<AgentRecord>(store, "agent:")).map(({ id, name, createdAt }) => ({ id, name, createdAt }));
+  const agents = (await all<AgentRecord>(store, "agent:")).map(({ id, name, createdAt, workload }) => ({ id, name, createdAt, ...(workload ? { workload } : {}) }));
   const describe = (l: Layer) => ({
     layer: l.name,
     rules: l.rules.map((r) => ({ id: r.id, text: describeRule(r, now, usage), effect: r.effect, ...(r.until !== undefined ? { until: r.until } : {}) })),
