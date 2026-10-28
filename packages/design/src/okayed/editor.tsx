@@ -1,4 +1,4 @@
-import { decideAll, describeRule, YOU, type Effect, type Policy, type Rule, type SharedBudget, type Usage } from "@okayed/engine";
+import { CATALOG, decideAll, describeRule, kindOf, parseRes, YOU, type Effect, type Policy, type Rule, type SharedBudget, type Usage } from "@okayed/engine";
 import { CheckCircle2Icon, GaugeIcon, MapPinIcon, SparklesIcon, Trash2Icon, UserIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
@@ -17,6 +17,8 @@ export interface EditorWorld {
   budgets: SharedBudget[];
   usage: Usage;
   now: number;
+  /** Known targets of registered packs (a Slack channel, an email address), by the names people use. */
+  named?: { res: string; names: string[] }[];
 }
 
 export interface RuleEditorProps {
@@ -109,7 +111,9 @@ export function RuleEditor({ rule, isNew, rules, world, onSave, onClose, describ
   const [r, setR] = useState<Rule>(rule);
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<Rule>) => setR((x) => clean({ ...x, ...patch }));
-  const kind = r.act.startsWith("github") ? "github" : r.act === "site.deploy" ? "site" : r.act === "spend.money" ? "money" : "any";
+  const kind = r.act.startsWith("github") ? "github" : r.act === "site.deploy" ? "site" : r.act === "spend.money" ? "money" : CATALOG[r.act] ? "named" : "any";
+  // For a registered pack's action: the known targets of the kinds it acts on.
+  const named = kind === "named" ? (world.named ?? []).filter((n) => { const x = parseRes(n.res); return !!x && CATALOG[r.act]!.res.includes(kindOf(x)); }) : [];
   const { agents, now } = world;
 
   const save = async (next: Rule[]) => {
@@ -146,7 +150,16 @@ export function RuleEditor({ rule, isNew, rules, world, onSave, onClose, describ
           <Step icon={<ActionTile act={r.act === "*" ? undefined : r.act} size="sm" />}>
             <ActionPicker value={r.act} onPick={(act) => set({ act, res: undefined, when: act === "github.pr.merge" ? r.when : undefined })} />
           </Step>
-          {kind !== "any" && kind !== "money" && (
+          {kind === "named" && named.length > 0 && (
+            <>
+              <StepJoin />
+              <Step icon={<StepIcon><MapPinIcon /></StepIcon>}>
+                on{" "}
+                <Choice label="Target" value={r.res} options={[["anything", undefined], ...named.map((n): [string, string] => [n.names[1] ?? n.names[0]!, n.res])]} onPick={(res) => set({ res })} />
+              </Step>
+            </>
+          )}
+          {kind !== "any" && kind !== "money" && kind !== "named" && (
             <>
               <StepJoin />
               <Step icon={<StepIcon><MapPinIcon /></StepIcon>}>
@@ -254,7 +267,7 @@ function ActionPicker({ value, onPick }: { value: string; onPick: (act: string) 
       <PopoverContent className="w-80 p-3" align="start">
         <div className="mb-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">Actions</div>
         <div className="grid grid-cols-3 gap-2">
-          {[...Object.values(ACTIONS), { act: "*", title: "Anything", tone: "any" as const }].map((a) => (
+          {[...Object.values(ACTIONS), ...Object.keys(CATALOG).filter((a) => !ACTIONS[a]).map((a) => actionMeta(a)), { act: "*", title: "Anything", tone: "any" as const }].map((a) => (
             <button
               key={a.act}
               type="button"

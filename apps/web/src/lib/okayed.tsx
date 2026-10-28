@@ -1,4 +1,5 @@
 import type { Card, GrantRecord, RequestRecord, Snapshot } from "@okayed/core";
+import { registerPack, registeredPacks } from "@okayed/engine";
 import { useAgent } from "agents/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -22,6 +23,13 @@ interface Okayed {
 
 const Ctx = createContext<Okayed | null>(null);
 
+/** The capability packs the server approves, registered here too, so their actions and resources read the same. */
+function adopt(s: Snapshot): Snapshot {
+  const have = new Set(registeredPacks().map((p) => p.id));
+  for (const p of s.packs ?? []) if (!have.has(p.id)) (registerPack(p), have.add(p.id));
+  return s;
+}
+
 export function useOkayed(): Okayed {
   const v = useContext(Ctx);
   if (!v) throw new Error("useOkayed outside OkayedProvider");
@@ -38,11 +46,11 @@ export function OkayedProvider({ session, onSignOut, children }: { session: Sess
     host: url.host,
     protocol: url.protocol === "https:" ? "wss" : "ws",
     query: { token: session.ownerToken },
-    onStateUpdate: (state: Snapshot | null) => state && setSnap(state),
+    onStateUpdate: (state: Snapshot | null) => state && setSnap(adopt(state)),
   } as never);
 
   useEffect(() => {
-    call<Snapshot>(session, "GET", "/state").then(setSnap, (e: Error) => toast.error(e.message));
+    call<Snapshot>(session, "GET", "/state").then((s) => setSnap(adopt(s)), (e: Error) => toast.error(e.message));
   }, [session]);
 
   const callApi = useCallback(<T,>(method: string, path: string, body?: unknown) => call<T>(session, method, path, body), [session]);
