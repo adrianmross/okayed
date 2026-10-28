@@ -177,9 +177,10 @@ the intent column scores it on its own. Fast decision models, such as OpenAI's D
 ```
 packages/engine      pure decision engine: anchors, binding, narrowing, standing policies, budgets, use checks
 packages/grant       grant format v0: JCS, ids, Nostr events, BIP-340 signatures, per-user issuer keys
-packages/core        provider-neutral service behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock,
-                     Notifier), the lifecycle flow, prompts, drafters (OpenAI-compatible, model-free), approvers
-                     (passkeys, paired apps), in-memory adapters, the GitHub tool, the demo's tools, and evals
+packages/core        the platform-neutral service: ports (Store, Signer, Drafter, Lifecycle, Clock, Notifier), the
+                     HTTP API on Request/Response, identity (OIDC, workload identity), connectors and credentials,
+                     capability pack setup, approvers (passkeys, paired apps), drafters, the demo's tools, evals
+packages/connectors  GitHub (token or GitHub App), Cloudflare (Pages, DNS, just-in-time tokens), Slack
 packages/design      okayed's design system: tokens, the latest shadcn components, AI Elements for chat, and
                      okayed's approval card, receipts, rule tiles and Shortcuts-style editor, also served as a
                      shadcn registry (docs/design-system.md)
@@ -189,6 +190,7 @@ apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedCh
 apps/web             the demo (Chat, Rules, Activity, Settings), React on @okayed/design, and /r/ (the registry)
 apps/playground      at /playground: ask your rules, build one, see every component configuration, and watch words
                      narrow into a grant; the engine in the browser
+apps/node            the same API on Node: SQLite, in-process timers, no build step
 apps/mcp             MCP server so any MCP agent asks okayed before acting
 docs/                design notes, grant format, design system
 scripts/             smoke.mjs (API end to end), mcp-remote.mjs (OAuth and MCP), e2e-web.mjs (the demo in a browser)
@@ -307,7 +309,11 @@ Or add the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ISSUER_SECRET` r
 | Route model calls through **AI Gateway** (logs, caching, rate limits) | Var `AI_GATEWAY` (the gateway id) |
 | **Real deploys** with just-in-time API tokens | Secret `CF_API_TOKEN` (permission: Account API Tokens: Edit, nothing else); vars `CF_ACCOUNT_ID` and `CF_PAGES_SITES`, e.g. `{"okayed.dev":{"project":"okayed-site","branches":{"production":"main","staging":"staging"}}}` |
 | Archive every signed event to **R2** | Uncomment `r2_buckets` in `wrangler.jsonc` (R2 needs billing enabled on the account) |
-| Merge real PRs | Secret `GITHUB_TOKEN`: fine-grained, pull-request write on the demo repo only |
+| Merge real PRs | A GitHub App (vars `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION`, secret `GITHUB_APP_KEY`), or secret `GITHUB_TOKEN`: fine-grained, pull-request write on the demo repo only |
+| Sign in with **another OIDC provider** | Vars `OIDC_ISSUER` and `OIDC_AUDIENCE`; the provider's ID token is the bearer token |
+| Approve **other services' actions** | Var `CAPABILITY_PACKS` (e.g. `slack,email,cloudflare-dns,aws-s3`) or `CAPABILITY_PACKS_JSON` |
+| Post to **Slack** | Secret `SLACK_BOT_TOKEN`, var `SLACK_WORKSPACE`, and the `slack` pack |
+| Change **DNS** with zone-scoped tokens | Var `CF_DNS_ZONES` (`{"okayed.dev":"<zone id>"}`), with `CF_ACCOUNT_ID`, `CF_API_TOKEN` and the `cloudflare-dns` pack |
 
 ### Use the components in your own app
 
@@ -352,15 +358,59 @@ The playground's Components view shows every configuration live, with its instal
 | User input | Chat (`apps/web`, served by the Worker), with AI SDK tool approval wired to okayed and live state over the Agents SDK WebSocket. Voice: speak in the chat, transcribed by Whisper on Workers AI (not Realtime). |
 | Memory / state | Chat history in `OkayedChat`'s SQLite; rules, limits, requests, grants with use counters, passkeys, paired approvers and the audit log in `OkayedAgent`; OAuth state in KV; optionally every signed event in R2 |
 
-## Not tied to Cloudflare
+## Built to plug into anything
 
-Only `apps/worker` imports Cloudflare APIs. The service in `packages/core` depends on six small ports, plus an
-optional `Notifier` for approver apps. The flow
-(`runGrantFlow`) is written once, and both Workflows and the in-memory runtime run it. Moving to another provider
-means implementing `Store` (needs a serializable transaction, e.g. a Postgres row lock), `Lifecycle` (Temporal, or a
-queue plus timers), `Drafter` (`OpenAICompatibleDrafter` already speaks to any OpenAI-compatible endpoint), `Signer` (KMS or HSM) and `Vault`. The core
-test suite already runs the whole flow (request, confirm, issue, once-only use, revoke, expiry, emergency stop) on
-the in-memory adapters in Node.
+The core doesn't know about Cloudflare, GitHub or any one sign-in. Each of those plugs in.
+
+**Any runtime.** `packages/core` holds the service and its whole HTTP API on the Fetch API's `Request` and
+`Response`, and uses only TypeScript syntax that can be stripped, so Node, Deno and Bun run it as is. Two runtimes
+ship: the Cloudflare Worker (a Durable Object serves the API) and `apps/node` (SQLite and timers). The API smoke test
+runs against both.
+
+```bash
+OKAYED_SECRET=$(openssl rand -hex 32) node apps/node/src/main.ts      # okayed on Node, on :8788
+```
+
+To port it elsewhere, implement `Store` (a serializable transaction per person: a Durable Object, SQLite, a Postgres
+row lock), `Lifecycle` (Workflows, timers, Temporal), and pick a `Drafter` (Workers AI, any OpenAI-compatible
+model, or none).
+
+**Any action, as data.** A capability pack declares a service's actions (risk, lifetimes, use counts, the words
+people use for them) and its resource types as templates. Registered, its actions get everything the built-in ones
+do: rules, decisions, narrowing, explanations, Face ID, signed grants and receipts.
+
+```ts
+registerPack({
+  id: "linear", title: "Linear",
+  resources: [{ kind: "linear.issue", template: "linear:{team}/{issue}", label: "{issue|upper} in {team}" }],
+  actions: [{ act: "linear.issue.close", verb: "close", noun: "closing Linear issues", risk: "medium",
+              ttl: 1800, maxTtl: 7200, uses: 1, maxUses: 10, res: ["linear.issue"], keywords: ["close"] }],
+});
+```
+
+Example packs ship for Slack, email, Cloudflare DNS and S3; turn them on with `CAPABILITY_PACKS=slack,email,…` or
+bring your own with `CAPABILITY_PACKS_JSON`.
+
+![An approval card for a Slack post, from a pack](docs/img/custom-action.png)
+
+**Any service, with the least credential.** A connector does one thing under a grant: it checks the grant without
+spending it (looking up any facts its conditions need), spends one use, acts and releases its credential. A
+credential is either a stored secret or minted for that call alone:
+
+| Connector | Credential |
+|---|---|
+| GitHub merge | A fine-grained token, or a GitHub App installation token for just that repository, revoked after |
+| Cloudflare Pages deploy | An account token with only Pages Write, valid until the grant expires (ten minutes at most), deleted after |
+| Cloudflare DNS change | A token with only DNS Write on just that zone, deleted after |
+| Slack post | The workspace's bot token |
+
+**Any way to prove who's asking and who's approving.**
+
+| Who | How |
+|---|---|
+| The person | An owner token; or Cloudflare Access; or an ID token from any OIDC provider (Auth0, Okta, Google…) |
+| An agent | An okayed agent token; or OAuth through remote MCP; or a **workload identity** token from its platform (GitHub Actions, Kubernetes, a cloud) that you trust in Settings, so CI holds no secret |
+| The approval | A passkey (Face ID, Touch ID, a security key); or a paired approver app that signs with its own key |
 
 ## Where it fits
 

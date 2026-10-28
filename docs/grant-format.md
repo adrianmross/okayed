@@ -90,6 +90,11 @@ matches one path segment and `**` matches the rest.
 | Site environment | `site:<host>/<env>` | `site:openmeadow.org/production` |
 | Money | `money:<account>/<currency>/<max>` | `money:card-1/USD/20` |
 
+Capability packs add resource types as templates, such as `slack:{workspace}/{channel}`,
+`dns:{zone}/{type}/{name}` or `s3:{bucket}/{key}`, with actions such as `slack.message.post` or
+`cloudflare.dns.edit`. Grants for them follow the same rules: exact resources only, one action, an expiry and a
+use count. A verifier needs the pack only to show labels; checking a use compares strings exactly.
+
 A merge grant must pin the head commit. If the PR moves, the grant no longer matches, and GitHub's merge API
 refuses it as well (`sha` parameter).
 

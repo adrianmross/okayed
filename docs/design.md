@@ -119,16 +119,34 @@ precise terms. Each pair names one thing:
                 │  OkayedChat   AIChatAgent per person (the demo assistant)           │──▶ Queues → approver apps
                 │  OkayedMcp    McpAgent per MCP session                              │──▶ R2 (event archive)
                 │  GrantLifecycle (Workflow): propose → await → issue → expire/revoke │──▶ Analytics Engine
-                │  tools: GitHub merge (holds a token), Pages deploy (mints one)      │──▶ GitHub, Cloudflare API
+                │  tools: connectors, each with a credential minted for the one call  │──▶ GitHub, Cloudflare API
                 └──────────────┬───────────────────────────────────────────────────────┘
                                │ imports
-          packages/core ── service logic behind ports (Store, Signer, Drafter, Lifecycle, Vault, Clock, Notifier,
-                           Deployer)
+          packages/core ── the service, its HTTP API, identity and connectors, behind ports (Store, Signer, Drafter,
+                           Lifecycle, Clock, Notifier); @okayed/connectors for GitHub, Cloudflare, Slack
           packages/engine ─ pure: catalog, resources, anchors, policy, narrowing, use checks
           packages/grant ── format: JCS, ids, Nostr events, signatures
 ```
 
 ## Provider-agnostic by design
+
+The core is platform-neutral in four ways:
+
+- **Runtime.** `packages/core` holds the service and the whole per-person HTTP API (`handleApi`) on the Fetch API's
+  `Request` and `Response`, with hooks for what a platform adds (identity, tools, limits, metrics, extras). It uses
+  only erasable TypeScript, so Node, Deno and Bun run it without a build. The Worker's Durable Object serves it over
+  RPC; `apps/node` serves it on SQLite.
+- **Actions.** Capability packs (`packages/engine/src/capabilities.ts`) declare any service's actions and resource
+  types as data. A deployment picks packs by name or brings its own; the snapshot carries them so the browser
+  registers the same; the service learns the names of their targets from requests, so words bind to them.
+- **Connectors and credentials.** `performWithGrant` is the one way anything acts under a grant: check without
+  spending (with the facts conditions need), spend one use, act, release the credential. A `CredentialSource` is a
+  stored secret or one minted per call, scoped to what the call touches and dead with the grant
+  (`@okayed/connectors`: GitHub App tokens per repository, Cloudflare tokens per zone or for Pages).
+- **Identity.** People prove themselves with an owner token, Cloudflare Access or any OIDC provider's ID token
+  (`personOf`); agents with an agent token, OAuth (remote MCP) or a workload identity token from their platform that
+  the person trusts (`trustWorkload`, `agentForWorkload`), so CI holds no secret.
+
 
 Cloudflare comes first, but only `apps/worker` imports Cloudflare APIs. Everything else goes through ports defined
 in `packages/core`:
@@ -139,10 +157,8 @@ in `packages/core`:
 | `Drafter` | text in, JSON proposal out | Workers AI (Llama 3.3) | `OpenAICompatibleDrafter` for any OpenAI-compatible endpoint; `HeuristicDrafter` offline |
 | `Lifecycle` | durable "wake me at t / when confirmed" | Workflows | Temporal, a cron + queue, in-process timers |
 | `Signer` | BIP-340 Schnorr over the event id | key from Worker secret | KMS, HSM, a hardware key |
-| `Vault` | swap a grant for a real credential | Worker secret | Vault, Secrets Manager |
 | `Clock` | `now()` in unix seconds | `Date.now` | — |
 | `Notifier` (optional) | wake a paired approver app | Queues, then an empty POST to the app's wake URL | a relay subscription, a push gateway, a webhook |
-| `Deployer` (optional) | deploy a site environment for a live grant | Pages, with an API token minted per deploy | any CI or platform API |
 
 Around the ports, `apps/worker` uses the rest of Cloudflare where it fits:
 

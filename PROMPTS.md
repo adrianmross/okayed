@@ -229,3 +229,18 @@ I also think we show on the shadcn repo different button configurations so like 
 | `feat(worker): …` | One Worker serves the site; remote MCP with OAuth and a Connect screen; Access sign-in; Turnstile; rate limits; Analytics Engine; Queues to wake approver apps; an R2 event archive; AI Gateway; Whisper for voice; real Pages deploys with just-in-time API tokens. |
 | `feat(web): …` | Approval buttons in Settings, timed "Always allow" and "Block" rules from hold and slide, voice in the chat, the Connect screen, Access and Turnstile sign-in. |
 | `test: …`, `docs: …`, `ci: …` | OAuth and MCP end to end, queue and archive checks in the smoke test, hold and slide in the browser test; CI and deploy on one Worker. |
+
+## 14 — Plug into anything
+
+```text
+But yes have the core be platform agnostic so we could hook this up with many things and approve a wide range of capacities and actions with different auth flows
+```
+
+### What came out of prompt 14
+
+| Commit | What |
+|---|---|
+| `feat: make the core platform-neutral …` | Identity in core (OIDC JWTs, Cloudflare Access as a preset, workload identity for agents); connectors with credentials minted per call (`@okayed/connectors`: GitHub token or App, Cloudflare Pages); the whole HTTP API in core on Request/Response, served by the Worker's Durable Object. |
+| `feat(engine): capability packs …`, `feat(design): …` | Any service's actions and resource types as data, with example packs for Slack, email, Cloudflare DNS and S3. |
+| `feat(node): …` | The same API on Node with SQLite and timers, no build step; the smoke test runs on both runtimes. |
+| `feat: approve any service's actions, end to end`, `feat(web): …` | Packs chosen by configuration and sent to the browser, learned target names, Slack and DNS connectors, trusting a CI workflow in Settings, registered actions in the rule editor. |
