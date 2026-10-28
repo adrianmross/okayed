@@ -1,4 +1,5 @@
-import { BookOpenIcon, CreditCardIcon, GitMergeIcon, MessageSquareTextIcon, RocketIcon, ShieldCheckIcon, SparklesIcon, type LucideIcon } from "lucide-react";
+import { CATALOG } from "@okayed/engine";
+import { BookOpenIcon, CreditCardIcon, GitMergeIcon, MessageSquareTextIcon, PuzzleIcon, RocketIcon, ShieldCheckIcon, SparklesIcon, type LucideIcon } from "lucide-react";
 
 export type Tone = "read" | "comment" | "merge" | "deploy" | "spend" | "policy" | "any";
 
@@ -26,9 +27,20 @@ export const ACTIONS: Record<string, ActionMeta> = {
 export const ANY_ACTION: ActionMeta = { act: "*", title: "Anything", verb: "do", noun: "anything", icon: SparklesIcon, tone: "any" };
 export const POLICY_ACTION: ActionMeta = { act: "policy", title: "Change a rule", verb: "change", noun: "changing rules", icon: ShieldCheckIcon, tone: "policy" };
 
+/** Actions from a registered capability pack: the engine's words, one neutral tile. */
+function registered(act: string): ActionMeta | undefined {
+  const spec = CATALOG[act];
+  if (!spec) return undefined;
+  const title = spec.title ?? `${spec.verb[0]!.toUpperCase()}${spec.verb.slice(1)}`;
+  return { act, title, verb: spec.verb, noun: spec.noun, icon: PuzzleIcon, tone: "any" };
+}
+
 export function actionMeta(act: string): ActionMeta {
   if (ACTIONS[act]) return ACTIONS[act];
   if (act === "policy") return POLICY_ACTION;
-  const family = Object.values(ACTIONS).find((a) => act.endsWith("*") && a.act.startsWith(act.replace(/\.?\*$/, "")));
-  return family ? { ...family, title: `Anything in ${act.replace(/\.?\*$/, "")}`, noun: `anything in ${act.replace(/\.?\*$/, "")}` } : ANY_ACTION;
+  const own = registered(act);
+  if (own) return own;
+  const prefix = act.replace(/\.?\*$/, "");
+  const family = act.endsWith("*") ? (Object.values(ACTIONS).find((a) => a.act.startsWith(prefix)) ?? Object.keys(CATALOG).map(registered).find((a) => a?.act.startsWith(prefix))) : undefined;
+  return family ? { ...family, title: `Anything in ${prefix}`, noun: `anything in ${prefix}` } : ANY_ACTION;
 }
