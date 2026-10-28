@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./resource.ts";
 export * from "./catalog.ts";
+export * from "./capabilities.ts";
 export * from "./policy.ts";
 export * from "./anchors.ts";
 export * from "./bind.ts";

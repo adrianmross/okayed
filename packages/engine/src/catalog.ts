@@ -1,10 +1,10 @@
-import { parseRes, type Resource } from "./resource.ts";
+import { kindOf, parseRes } from "./resource.ts";
 import type { Layer, Policy, Risk, Rule } from "./types.ts";
 
 export interface ActionSpec {
   act: string;
-  /** Resource kinds this action applies to. */
-  res: Resource["kind"][];
+  /** Resource kinds this action applies to: built-in (`github.pr`, `site`…) or registered (`slack.channel`). */
+  res: string[];
   risk: Risk;
   readOnly: boolean;
   /** Default and maximum lifetime, seconds. */
@@ -18,6 +18,22 @@ export interface ActionSpec {
   noun: string;
   /** Whether a PR resource must pin a commit. */
   pinCommit?: boolean;
+  /** "Post a message": how a list of actions names it. */
+  title?: string;
+  /** Words that name the action in a sentence ("post", "message"). Built-in actions have their own patterns. */
+  keywords?: string[];
+  /** Riskier on some resources, e.g. a bucket whose name says prod. */
+  riskIf?: RiskIf[];
+  /** The capability pack it came from. */
+  pack?: string;
+}
+
+/** Raises an action's risk when a field of its resource is one of `equals`, or matches the regex `matches`. */
+export interface RiskIf {
+  field: string;
+  equals?: string[];
+  matches?: string;
+  risk: Risk;
 }
 
 const MIN = 60;
@@ -105,6 +121,12 @@ export function riskOf(act: string, res: string[]): Risk {
   for (const s of res) {
     const r = parseRes(s);
     if (r?.kind === "site" && r.env === "production") risk = maxRisk(risk, "high");
+    if (r?.kind !== "custom") continue;
+    for (const when of spec.riskIf ?? []) {
+      const v = r.fields[when.field];
+      if (v === undefined) continue;
+      if (when.equals?.includes(v) || (when.matches !== undefined && new RegExp(when.matches).test(v))) risk = maxRisk(risk, when.risk);
+    }
   }
   return risk;
 }
@@ -113,7 +135,7 @@ export function riskOf(act: string, res: string[]): Risk {
 export function fitsAction(act: string, res: string): boolean {
   const spec = CATALOG[act];
   const r = parseRes(res);
-  if (!spec || !r || !spec.res.includes(r.kind)) return false;
+  if (!spec || !r || !spec.res.includes(kindOf(r))) return false;
   if (spec.pinCommit && r.kind === "github.pr" && !r.sha) return false;
   return true;
 }

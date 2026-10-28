@@ -91,6 +91,11 @@ export interface Targets {
   prs: { repo: string; number: number; head?: string }[];
   sites: { host: string; envs: string[] }[];
   agents: string[];
+  /**
+   * Known resources of registered types and the names people call them, e.g.
+   * `{ res: "slack:acme/releases", names: ["#releases", "releases"] }`, so words bind to exact targets.
+   */
+  named?: { res: string; names: string[] }[];
 }
 
 export interface GrantDraft {

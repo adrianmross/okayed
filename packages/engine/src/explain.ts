@@ -43,6 +43,7 @@ export function doesNotAllowFor(d: GrantDraft, now: Unix = d.nbf): string[] {
     } else if (r.kind === "github.repo") out.push(`touch any other repository`);
     else if (r.kind === "site") out.push(`${verb} ${r.host} to any environment but ${r.env}, or any other site`);
     else if (r.kind === "money") out.push(`spend more than ${r.max} ${r.currency}`);
+    else out.push(`${verb} anything but ${labelRes(s)}`);
   }
   if (d.act !== "github.read") out.push("anything other than this one action");
   else out.push("write, comment, merge or deploy");

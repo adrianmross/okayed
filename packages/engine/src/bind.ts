@@ -1,6 +1,6 @@
 import type { Anchors } from "./anchors.ts";
-import { CATALOG } from "./catalog.ts";
-import { formatRes, labelRes, parseRes, repoOf } from "./resource.ts";
+import { CATALOG, fitsAction } from "./catalog.ts";
+import { BUILTIN_KINDS, canonRes, formatRes, labelRes, parseRes, repoOf } from "./resource.ts";
 import type { Beyond, Request, Targets, Unix } from "./types.ts";
 
 /**
@@ -44,14 +44,17 @@ const refuse = (reason: string): Miss => ({ ok: false, reason });
 function fitsAnchors(r: Request, a: Anchors): boolean {
   if (a.acts.length && !a.acts.includes(r.act)) return false;
   if (a.negatedActs.includes(r.act)) return false;
+  if (a.agents.length && !a.agents.includes(r.aud)) return false;
   const parsed = r.res.map(parseRes);
+  // A request for a registered type is pinned by named targets; repos, sites and environments are about built-ins
+  // (an email domain is not a site).
+  if (parsed.every((x) => x?.kind === "custom")) return !a.named.length || r.res.some((x) => a.named.includes(canonRes(x) ?? ""));
   const any = (f: (x: NonNullable<(typeof parsed)[number]>) => boolean) => parsed.some((x) => x !== null && f(x));
   if (a.prNumbers.length && !any((x) => x.kind === "github.pr" && a.prNumbers.includes(x.number))) return false;
   if (a.repos.length && !any((x) => a.repos.includes(repoOf(x) ?? ""))) return false;
   if (a.shas.length && !any((x) => x.kind === "github.pr" && !!x.sha && a.shas.some((s) => x.sha!.startsWith(s)))) return false;
   if (a.sites.length && !any((x) => x.kind === "site" && a.sites.includes(x.host))) return false;
   if (a.envs.length && !any((x) => x.kind === "site" && a.envs.includes(x.env))) return false;
-  if (a.agents.length && !a.agents.includes(r.aud)) return false;
   return true;
 }
 
@@ -65,6 +68,16 @@ function describeRequest(r: Request): string {
 /** Builds exact resources for an approval given before any request, from the words and known targets only. */
 function bindFromWords(act: string, a: Anchors, t: Targets): { ok: true; res: string[] } | Miss {
   const spec = CATALOG[act]!;
+  // A registered action binds to the known targets the words name, and never to one they don't.
+  if (spec.res.every((k) => !BUILTIN_KINDS.has(k))) {
+    const named = a.named.filter((r) => fitsAction(act, r));
+    if (named.length) return { ok: true, res: named };
+    const known = (t.named ?? []).filter((n) => {
+      const c = canonRes(n.res);
+      return c !== null && fitsAction(act, c);
+    });
+    return question(`Where should I let it ${spec.verb}?`, known.map((n) => n.names[0] ?? labelRes(n.res)));
+  }
   if (spec.res.includes("github.pr") && (act !== "github.read" || a.prNumbers.length)) {
     if (a.prNumbers.length > 1) return question("Which pull request?", a.prNumbers.map((n) => `#${n}`));
     const n = a.prNumbers[0];
@@ -129,7 +142,7 @@ export function bind(input: BindInput, a: Anchors, beyond: Beyond[]): Bound {
       beyond.push({ field: "request", asked: input.draftRequest, why: "your words don't point at that request" });
     }
   }
-  const specific = a.acts.length + a.prNumbers.length + a.repos.length + a.sites.length + a.envs.length + a.shas.length > 0;
+  const specific = a.acts.length + a.prNumbers.length + a.repos.length + a.sites.length + a.envs.length + a.shas.length + a.named.length > 0;
   if (!chosen && candidates.length === 1 && (specific || a.approves)) chosen = candidates[0];
   if (!chosen && candidates.length > 1) {
     return question("Which request do you mean?", candidates.map(describeRequest));
