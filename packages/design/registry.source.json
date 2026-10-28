@@ -26,7 +26,8 @@
         "lucide-react"
       ],
       "registryDependencies": [
-        "okayed-theme"
+        "okayed-theme",
+        "okayed-engine"
       ],
       "files": [
         "src/okayed/actions.ts",
