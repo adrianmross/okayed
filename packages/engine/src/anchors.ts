@@ -1,3 +1,5 @@
+import { CATALOG } from "./catalog.ts";
+import { canonRes, parseRes } from "./resource.ts";
 import type { Condition, Effect, Targets } from "./types.ts";
 
 /**
@@ -15,6 +17,8 @@ export interface Anchors {
   envs: string[];
   negatedEnvs: string[];
   agents: string[];
+  /** Exact resources of registered types: known targets named in the words, or written out (`slack:acme/releases`). */
+  named: string[];
   /** Lifetime the person stated, seconds. */
   ttl?: number;
   /** The person asked for no expiry ("forever"); grants always expire, so this is reported, not honored. */
@@ -34,6 +38,27 @@ const VERBS: [string, RegExp][] = [
   ["site.deploy", /\b(?:deploy(?:s|ed|ing|ment|ments)?|ship(?:s|ped|ping)?|publish(?:es|ed|ing)?|releas(?:e|es|ed|ing)|go(?:es)? live|push(?:es)? (?:it )?live)\b/g],
   ["spend.money", /\b(?:spend(?:s|ing)?|spent|pay(?:s|ing)?|paid|buy(?:s|ing)?|bought|purchas(?:e|es|ed|ing)|charg(?:e|es|ed|ing)|money)\b/g],
 ];
+
+/** Patterns for registered actions, from their keywords. A single word also matches its -s, -es, -ed and -ing forms. */
+function customVerbs(): [string, RegExp][] {
+  const out: [string, RegExp][] = [];
+  for (const spec of Object.values(CATALOG)) {
+    if (!spec.keywords?.length) continue;
+    const alts = spec.keywords.map((k) => k.split(" ").map(escapeRe).join("\\s+") + (k.includes(" ") ? "" : "(?:s|es|ed|d|ing)?"));
+    out.push([spec.act, new RegExp(`\\b(?:${alts.join("|")})\\b`, "g")]);
+  }
+  return out;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.+?^${}()|[\]\\*-]/g, "\\$&");
+}
+
+/** Where a text names `name` on its own: "#releases", not "#releases-old" or "pre-releases". */
+function mention(name: string): RegExp | null {
+  const n = name.trim().toLowerCase();
+  return n ? new RegExp(`(?<![\\w#@.-])${escapeRe(n)}(?![\\w-])`, "g") : null;
+}
 
 const NEGATORS = /\b(?:not|never|no|don't|dont|do not|doesn't|without|nor|except|but not)\s+(?:\w+\s+){0,2}$/;
 
@@ -88,15 +113,38 @@ export function extractAnchors(utterance: string, targets: Targets): Anchors {
     envs: [],
     negatedEnvs: [],
     agents: [],
+    named: [],
     unbounded: false,
     conditions: [],
     approves: /\b(?:approve[ds]?|approving|go ahead|yes|yep|ok|okay|okayed|sure|do it|lgtm|ship it|green ?light|confirm(?:ed)?)\b/.test(t),
     genericSite: /\b(?:the|our|my) (?:web ?site|site|web ?app|app|homepage)\b/.test(t),
   };
 
-  for (const [act, re] of VERBS) {
-    for (const m of t.matchAll(re)) {
-      (negated(t, m.index) ? a.negatedActs : a.acts).push(act);
+  // Resources of registered types: known ones by the names people use, and any written out in full (case kept, for
+  // types that keep it). Their words are names, not verbs: "#releases" is a channel, not a request to release.
+  let words = t;
+  const blank = (s: string) => " ".repeat(s.length);
+  for (const n of targets.named ?? []) {
+    const res = canonRes(n.res);
+    if (!res) continue;
+    for (const name of n.names) {
+      const re = mention(name);
+      if (!re || !re.test(words)) continue;
+      a.named.push(res);
+      words = words.replace(mention(name)!, blank);
+    }
+  }
+  const raw = utterance.replace(/[’‘]/g, "'").replace(/\s+/g, " ");
+  for (const m of raw.matchAll(/(?<![\w/])([a-zA-Z][a-zA-Z0-9+.-]*:[^\s,;]+?)(?=[.,;!?)]*(?:\s|$))/g)) {
+    if (parseRes(m[1]!)?.kind !== "custom") continue;
+    a.named.push(canonRes(m[1]!)!);
+    words = words.split(m[1]!.toLowerCase()).join(blank(m[1]!));
+  }
+  a.named = uniq(a.named);
+
+  for (const [act, re] of [...VERBS, ...customVerbs()]) {
+    for (const m of words.matchAll(re)) {
+      (negated(words, m.index) ? a.negatedActs : a.acts).push(act);
     }
   }
   // "read-only" talks about scope, not about a separate read on top of something else.
@@ -181,6 +229,8 @@ export interface PolicyClause {
   sites: string[];
   envs: string[];
   agents: string[];
+  /** Exact resources of registered types the clause names. */
+  named: string[];
   conditions: Condition[];
   /** How long the policy should stand, seconds. */
   ttl?: number;
@@ -219,7 +269,7 @@ export function policyClauses(utterance: string, targets: Targets): PolicyClause
     const everything = acts.length === 0 && /\b(?:anything|everything|all|any action)\b/.test(text);
     // In "never deploy to production", "never" is the rule's effect, not a negated place: block rules keep it as scope.
     const envs = effect === "deny" ? uniq([...a.envs, ...a.negatedEnvs]) : a.envs;
-    const clause: PolicyClause = { text, acts, everything, repos: a.repos, sites: a.sites, envs, agents: a.agents, conditions: a.conditions, unbounded: a.unbounded };
+    const clause: PolicyClause = { text, acts, everything, repos: a.repos, sites: a.sites, envs, agents: a.agents, named: a.named, conditions: a.conditions, unbounded: a.unbounded };
     if (effect) clause.effect = effect;
     if (a.ttl !== undefined) clause.ttl = a.ttl;
     if (a.uses !== undefined) clause.uses = a.uses;

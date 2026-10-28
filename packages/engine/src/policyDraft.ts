@@ -2,7 +2,7 @@ import { policyClauses, type PolicyClause } from "./anchors.ts";
 import { CATALOG } from "./catalog.ts";
 import { shortDuration } from "./format.ts";
 import { lint, type LintWarning } from "./policy.ts";
-import { matchAct, parseRes } from "./resource.ts";
+import { matchAct, parseRes, ruleScopeOf } from "./resource.ts";
 import type { Beyond, Condition, Effect, Layer, Policy, Rule, Targets, Unix } from "./types.ts";
 
 export interface PolicyDraftInput {
@@ -47,8 +47,9 @@ function clauseFor(act: string, clauses: PolicyClause[]): PolicyClause | undefin
   return clauses.find((c) => c.effect && c.acts.some((x) => x === act || matchAct(x, act) || matchAct(act, x))) ?? clauses.find((c) => c.effect && c.everything);
 }
 
-/** The narrowest resource pattern a clause names: a repo, a site's environment, an environment anywhere. */
+/** The narrowest resource pattern a clause names: a known target, a repo, a site's environment, an environment anywhere. */
 function clauseScope(c: PolicyClause): string | undefined {
+  if (c.named.length === 1) return c.named[0];
   if (c.repos.length === 1) return `github:${c.repos[0]}/**`;
   if (c.sites.length === 1) return c.envs.length === 1 ? `site:${c.sites[0]}/${c.envs[0]}` : `site:${c.sites[0]}/*`;
   if (c.envs.length === 1) return `site:*/${c.envs[0]}`;
@@ -58,6 +59,8 @@ function clauseScope(c: PolicyClause): string | undefined {
 /** True if pattern `a` covers no more than pattern `b`. */
 function within(a: string, b: string): boolean {
   if (a === b) return true;
+  // An exact scope (a named target) admits only itself.
+  if (!b.includes("*")) return false;
   if (b.endsWith("/**")) return a === b.slice(0, -3) || a.startsWith(b.slice(0, -2));
   if (b.endsWith("/*")) return a.startsWith(b.slice(0, -1)) && !a.slice(b.length - 1).includes("/");
   if (b.startsWith("site:*/")) return /^site:[^/*]+\//.test(a) && a.endsWith(b.slice(6));
@@ -184,14 +187,15 @@ export function narrowPolicy(input: PolicyDraftInput): PolicyDraftResult {
 
 /**
  * "Always allow…": the narrowest standing rule that covers a request like this one again. A pull request becomes its
- * repository, a deploy keeps its site and environment, a purchase keeps its exact amount; the agent and any
- * conditions carry over. The person widens it in the editor if they mean more.
+ * repository, a deploy keeps its site and environment, a purchase keeps its exact amount, a registered type follows
+ * its `ruleScope` (or stays exact); the agent and any conditions carry over. The person widens it in the editor.
  */
 export function ruleFromRequest(r: { act: string; res: string[]; aud?: string; when?: Condition[] }, id: string): Rule {
   const first = r.res[0] ? parseRes(r.res[0]) : null;
   const res =
     first?.kind === "github.pr" || first?.kind === "github.repo" ? `github:${first.owner}/${first.repo}/**`
     : first?.kind === "site" ? `site:${first.host}/${first.env}`
+    : first?.kind === "custom" ? (ruleScopeOf(r.res[0]!) ?? r.res[0])
     : r.res[0];
   const rule: Rule = { id, effect: "allow", act: r.act };
   if (res) rule.res = res;
