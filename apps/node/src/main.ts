@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // okayed on Node: node apps/node/src/main.ts (Node 22.18+ runs the TypeScript as is).
 // OKAYED_SECRET (64 hex) is required. Optional: PORT, OKAYED_DB (a SQLite file), WEB_ORIGINS, OIDC_ISSUER and
-// OIDC_AUDIENCE, DRAFT_BASE_URL with MODEL and DRAFT_API_KEY, GITHUB_TOKEN, and CF_ACCOUNT_ID, CF_API_TOKEN,
-// CF_PAGES_SITES for real deploys.
+// OIDC_AUDIENCE, DRAFT_BASE_URL with MODEL and DRAFT_API_KEY, CAPABILITY_PACKS (e.g. "slack,email"), GITHUB_TOKEN,
+// SLACK_BOT_TOKEN with SLACK_WORKSPACE, and CF_ACCOUNT_ID, CF_API_TOKEN with CF_PAGES_SITES or CF_DNS_ZONES.
+
 import { okayedServer } from "./server.ts";
 
 const env = process.env;

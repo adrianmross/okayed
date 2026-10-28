@@ -1,4 +1,5 @@
 import { CATALOG } from "@okayed/engine";
+import { addedPacks } from "./packs.ts";
 import type { Draft, DraftContext } from "./ports.ts";
 
 /**
@@ -24,6 +25,16 @@ For "policy", give rules: effect ("allow" = auto-approve, "ask" = ask the person
 
 Return JSON only, matching the schema.`;
 
+/** Resource formats and known targets of the packs a deployment added, so the model can name them exactly. */
+function formats(ctx: DraftContext): string {
+  const types = addedPacks().flatMap((p) => p.resources ?? []);
+  if (!types.length) return "";
+  const named = (ctx.targets.named ?? []).map((n) => `${n.names[0]} = ${n.res}`).join("; ");
+  return `Other resource formats: ${types.map((t) => `${t.kind} ${t.template}`).join("; ")}
+Known named targets: ${named || "(none)"}
+`;
+}
+
 export function draftUser(utterance: string, ctx: DraftContext): string {
   const catalog = Object.values(CATALOG)
     .map((a) => `${a.act} (${a.verb}; resources: ${a.res.join(", ")}; risk ${a.risk})`)
@@ -34,7 +45,7 @@ export function draftUser(utterance: string, ctx: DraftContext): string {
   return `Catalog:
 ${catalog}
 
-Known repositories: ${ctx.targets.repos.join(", ") || "(none)"}
+${formats(ctx)}Known repositories: ${ctx.targets.repos.join(", ") || "(none)"}
 Known sites: ${ctx.targets.sites.map((s) => `${s.host} [${s.envs.join(", ")}]`).join("; ") || "(none)"}
 Agents: ${ctx.targets.agents.join(", ") || "(none)"}
 Pending requests:

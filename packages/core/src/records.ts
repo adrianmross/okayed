@@ -1,4 +1,4 @@
-import type { Beyond, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, SharedBudget, Targets, Usage, UseCode } from "@okayed/engine";
+import type { Beyond, CapabilityPack, Facts, GrantDraft, Layer, Proposal, Request, Risk, Rule, SharedBudget, Targets, Usage, UseCode } from "@okayed/engine";
 import type { Grant, NostrEvent } from "@okayed/grant";
 
 /** Everything okayed stores for one person, and the snapshot their browser sees. */
@@ -143,5 +143,7 @@ export interface Snapshot {
   passkeys: { id: string; name: string; rpID: string; createdAt: number }[];
   /** Approver apps paired on other devices. */
   approvers: { pubkey: string; name: string; createdAt: number }[];
+  /** Capability packs this deployment approves beyond the built-in ones, as data the browser registers too. */
+  packs: CapabilityPack[];
 }
 

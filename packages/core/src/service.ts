@@ -38,6 +38,7 @@ import {
 import { chatCard, draftOf, grantCard } from "./cards.ts";
 import type { FlowTarget } from "./flow.ts";
 import { agentForWorkload, type WorkloadTrust } from "./identity.ts";
+import { addedPacks, namesFor } from "./packs.ts";
 import { bindingFor, readAnswer, readHttpAuth, type ApprovalBinding, type Notifier, type PairedApprover, type PushedApproval } from "./approvers.ts";
 import { approvalOptions, registrationOptions, verifyApproval, verifyRegistration, type RelyingParty, type StoredPasskey } from "./passkeys.ts";
 import type { Clock, DraftContext, Drafter, Lifecycle, Randomness, Signer, Store } from "./ports.ts";
@@ -786,7 +787,7 @@ export class OkayedService implements FlowTarget {
     const s = this.d.store;
     const who = { userId: this.d.userId, issuer: this.d.signer.pubkey, drafter: this.d.drafter.name };
     const snap = await buildSnapshot(s, who, await this.meta(s), await this.policy(s), await this.targets(s), await this.usage(s), this.d.clock.now());
-    return { ...snap, passkeys: (await this.passkeys(s)).map(({ id, name, rpID, createdAt }) => ({ id, name, rpID, createdAt })), approvers: await this.approvers(s) };
+    return { ...snap, passkeys: (await this.passkeys(s)).map(({ id, name, rpID, createdAt }) => ({ id, name, rpID, createdAt })), approvers: await this.approvers(s), packs: addedPacks() };
   }
 
   async events(): Promise<NostrEvent[]> {
@@ -918,6 +919,9 @@ export class OkayedService implements FlowTarget {
         const site = t.sites.find((y) => y.host === x.host);
         if (!site) t.sites.push({ host: x.host, envs: [x.env] });
         else if (!site.envs.includes(x.env)) site.envs.push(x.env);
+      } else if (x.kind === "custom" && !(t.named ?? []).some((n) => n.res === s)) {
+        // A registered pack's resource: remember it by the names people would use, so words can bind to it.
+        t.named = [...(t.named ?? []), { res: s, names: namesFor(s, x) }].slice(-200);
       }
     }
     if (!t.agents.includes(r.aud)) t.agents.push(r.aud);

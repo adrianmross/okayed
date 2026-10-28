@@ -55,6 +55,14 @@ export interface Env {
   /** R2: an archive of every signed event. Needs R2 enabled on the account. */
   ARCHIVE?: R2Bucket;
 
+  /** Capability packs to approve beyond the built-in ones: example ids ("slack,email") and your own as JSON. */
+  CAPABILITY_PACKS?: string;
+  CAPABILITY_PACKS_JSON?: string;
+  /** Slack posts (the slack pack): a bot token and its workspace. */
+  SLACK_BOT_TOKEN?: string;
+  SLACK_WORKSPACE?: string;
+  /** DNS changes (the cloudflare-dns pack): zone name → zone id, with CF_ACCOUNT_ID and CF_API_TOKEN. */
+  CF_DNS_ZONES?: string;
   /** Real deploys: the account, a token that can create account tokens, and which Pages project each site is. */
   CF_ACCOUNT_ID?: string;
   CF_API_TOKEN?: string;

@@ -90,3 +90,44 @@ export function cloudflarePagesDeploy(o: { accountId: string; sites: PagesSites;
     },
   };
 }
+
+/**
+ * POST /tools/cloudflare/dns: `{ grant, zone, type, name, content, ttl?, proxied? }` (the Cloudflare DNS pack's
+ * `cloudflare.dns.edit`). Pair it with `cloudflareToken({ permissions: ["DNS Write"], resources: zoneScope })` so each
+ * call's token covers only the one zone.
+ */
+export function cloudflareDnsEdit(o: { zones: Record<string, string>; credential: CredentialSource; fetch?: Fetch }): Connector<{ zone: string; zoneId: string; type: string; name: string; content: string; ttl: number; proxied?: boolean }> {
+  const f = o.fetch ?? fetch;
+  return {
+    id: "cloudflare/dns",
+    act: "cloudflare.dns.edit",
+    title: "Change a DNS record on Cloudflare",
+    credential: o.credential,
+    input(b) {
+      const zone = String(b.zone ?? "").toLowerCase();
+      const zoneId = o.zones[zone];
+      if (!zoneId) throw new Error(`${zone || "that zone"} isn't a zone okayed manages`);
+      const type = String(b.type ?? "").toLowerCase();
+      const name = String(b.name ?? "").toLowerCase();
+      if (!/^(a|aaaa|cname|txt|mx|ns|srv|caa)$/.test(type) || !/^(@|[a-z0-9_-]+(\.[a-z0-9_-]+)*)$/.test(name) || typeof b.content !== "string" || !b.content) {
+        throw new Error("send type, name (or @ for the apex) and content");
+      }
+      return { zone, zoneId, type, name, content: b.content, ttl: typeof b.ttl === "number" ? b.ttl : 1, ...(typeof b.proxied === "boolean" ? { proxied: b.proxied } : {}) };
+    },
+    resource: (i) => `dns:${i.zone}/${i.type}/${i.name}`,
+    scope: (i) => ({ zone: i.zoneId }),
+    async perform(i, { token }) {
+      const fqdn = i.name === "@" ? i.zone : `${i.name}.${i.zone}`;
+      const type = i.type.toUpperCase();
+      const existing = await cf<{ id: string }[]>(f, "GET", `/zones/${i.zoneId}/dns_records?type=${type}&name=${encodeURIComponent(fqdn)}`, token ?? "");
+      const record = { type, name: fqdn, content: i.content, ttl: i.ttl, ...(i.proxied !== undefined ? { proxied: i.proxied } : {}) };
+      const out = existing[0]
+        ? await cf<{ id: string }>(f, "PUT", `/zones/${i.zoneId}/dns_records/${existing[0].id}`, token ?? "", record)
+        : await cf<{ id: string }>(f, "POST", `/zones/${i.zoneId}/dns_records`, token ?? "", record);
+      return { changed: true, record: out.id, name: fqdn, type };
+    },
+  };
+}
+
+/** A minted token's resources: just the zone the call touches. */
+export const zoneScope = (scope: Record<string, string> | undefined): Record<string, string> => ({ [`com.cloudflare.api.account.zone.${scope?.zone ?? "none"}`]: "*" });

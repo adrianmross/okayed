@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { DatabaseSync } from "node:sqlite";
-import { cloudflarePagesDeploy, cloudflareToken, githubMerge } from "@okayed/connectors";
+import { cloudflareDnsEdit, cloudflarePagesDeploy, cloudflareToken, githubMerge, slackPost, zoneScope } from "@okayed/connectors";
 import {
   FallbackDrafter,
   HeuristicDrafter,
@@ -11,6 +11,7 @@ import {
   OpenAICompatibleDrafter,
   SystemClock,
   cryptoRandom,
+  enablePacks,
   handleApi,
   oidcBearer,
   personOf,
@@ -47,11 +48,16 @@ export function okayedServer(o: NodeOptions): Server {
   const env = o.env ?? {};
   const issuers: PersonIssuer[] = o.oidc ? [oidcBearer(o.oidc.issuer, o.oidc.audience)] : [];
 
+  enablePacks({ ids: env.CAPABILITY_PACKS, json: env.CAPABILITY_PACKS_JSON });
   const connectors: Connector<any>[] = [];
   if (env.GITHUB_TOKEN) connectors.push(githubMerge({ credential: staticCredential(env.GITHUB_TOKEN) }));
   if (env.CF_ACCOUNT_ID && env.CF_API_TOKEN && env.CF_PAGES_SITES) {
     connectors.push(cloudflarePagesDeploy({ accountId: env.CF_ACCOUNT_ID, sites: JSON.parse(env.CF_PAGES_SITES), credential: cloudflareToken({ accountId: env.CF_ACCOUNT_ID, token: env.CF_API_TOKEN, permissions: ["Pages Write"] }) }));
   }
+  if (env.CF_ACCOUNT_ID && env.CF_API_TOKEN && env.CF_DNS_ZONES) {
+    connectors.push(cloudflareDnsEdit({ zones: JSON.parse(env.CF_DNS_ZONES), credential: cloudflareToken({ accountId: env.CF_ACCOUNT_ID, token: env.CF_API_TOKEN, permissions: ["DNS Write"], resources: zoneScope }) }));
+  }
+  if (env.SLACK_BOT_TOKEN && env.SLACK_WORKSPACE) connectors.push(slackPost({ workspace: env.SLACK_WORKSPACE, credential: staticCredential(env.SLACK_BOT_TOKEN) }));
 
   const person = (userId: string): OkayedService => {
     let svc = people.get(userId);

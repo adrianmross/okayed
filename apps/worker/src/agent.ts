@@ -11,6 +11,7 @@ import {
   SystemClock,
   cloudflareAccess,
   cryptoRandom,
+  enablePacks,
   handleApi,
   oidcBearer,
   personOf,
@@ -24,7 +25,7 @@ import {
   type RelyingParty,
   type Snapshot,
 } from "@okayed/core";
-import { cloudflarePagesDeploy, cloudflareToken, githubAppCredential, githubMerge, prHead } from "@okayed/connectors";
+import { cloudflareDnsEdit, cloudflarePagesDeploy, cloudflareToken, githubAppCredential, githubMerge, prHead, slackPost, zoneScope } from "@okayed/connectors";
 import { parseRes } from "@okayed/engine";
 import { sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
@@ -54,6 +55,11 @@ function connectorsFor(env: Env): Connector<any>[] {
     const credential = cloudflareToken({ accountId: env.CF_ACCOUNT_ID, token: env.CF_API_TOKEN, permissions: [env.CF_PAGES_WRITE_GROUP ?? "Pages Write"] });
     out.push(cloudflarePagesDeploy({ accountId: env.CF_ACCOUNT_ID, sites: JSON.parse(env.CF_PAGES_SITES), credential }));
   }
+  if (env.CF_ACCOUNT_ID && env.CF_API_TOKEN && env.CF_DNS_ZONES) {
+    const credential = cloudflareToken({ accountId: env.CF_ACCOUNT_ID, token: env.CF_API_TOKEN, permissions: ["DNS Write"], resources: zoneScope });
+    out.push(cloudflareDnsEdit({ zones: JSON.parse(env.CF_DNS_ZONES), credential }));
+  }
+  if (env.SLACK_BOT_TOKEN && env.SLACK_WORKSPACE) out.push(slackPost({ workspace: env.SLACK_WORKSPACE, credential: staticCredential(env.SLACK_BOT_TOKEN) }));
   return out;
 }
 
@@ -68,6 +74,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   private get svc(): OkayedService {
     if (this._svc) return this._svc;
     if (!/^[0-9a-f]{64}$/.test(this.env.ISSUER_SECRET ?? "")) throw new OkayedError(500, "ISSUER_SECRET must be 64 hex characters");
+    enablePacks({ ids: this.env.CAPABILITY_PACKS, json: this.env.CAPABILITY_PACKS_JSON });
     const heuristic = new HeuristicDrafter();
     // Workers AI by default; any OpenAI-compatible endpoint when configured; the heuristic offline or as the fallback.
     const model =
