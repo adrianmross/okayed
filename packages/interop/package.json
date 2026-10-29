@@ -1,0 +1,24 @@
+{
+  "name": "@okayed/interop",
+  "version": "0.1.0",
+  "description": "okayed and the rest of the permission world: OAuth scopes and rich authorization requests, OIDC and SAML groups, SCIM directories and UCAN, mapped onto okayed's actions, resources and principals.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@okayed/core": "workspace:*",
+    "@okayed/engine": "workspace:*",
+    "@okayed/grant": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.5"
+  }
+}

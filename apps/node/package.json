@@ -13,7 +13,8 @@
   "dependencies": {
     "@okayed/connectors": "workspace:*",
     "@okayed/core": "workspace:*",
-    "@okayed/grant": "workspace:*"
+    "@okayed/grant": "workspace:*",
+    "@okayed/interop": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
