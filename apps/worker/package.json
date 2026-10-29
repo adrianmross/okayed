@@ -21,6 +21,7 @@
     "@okayed/core": "workspace:*",
     "@okayed/engine": "workspace:*",
     "@okayed/grant": "workspace:*",
+    "@okayed/interop": "workspace:*",
     "@okayed/mcp": "workspace:*",
     "agents": "^0.31.0",
     "ai": "^7.0.157",
