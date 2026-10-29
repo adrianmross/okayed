@@ -1,11 +1,11 @@
 import type { Card } from "@okayed/core";
-import { ActionTile, NewRuleTile, RuleEditor, RuleTile, agentName, blankRule, tileTitle } from "@okayed/design/okayed";
+import { ActionTile, NewRuleTile, RuleEditor, RuleTile, VerdictPill, agentName, blankRule, tileTitle } from "@okayed/design/okayed";
 import { Button } from "@okayed/design/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@okayed/design/ui/dropdown-menu";
 import { Input } from "@okayed/design/ui/input";
 import { Spinner } from "@okayed/design/ui/spinner";
-import { describeBudget, ruleParts, type Rule, type SharedBudget } from "@okayed/engine";
-import { CalendarClockIcon, PlusIcon, RotateCcwIcon, ScanFaceIcon, Trash2Icon, WandSparklesIcon } from "lucide-react";
+import { YOU, describeBudget, ruleParts, type Rule, type SharedBudget } from "@okayed/engine";
+import { BuildingIcon, CalendarClockIcon, PlusIcon, RotateCcwIcon, ScanFaceIcon, Trash2Icon, WandSparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { useEditorWorld, useRules } from "../components/always-allow";
 import { Page, Section } from "../components/page";
@@ -26,6 +26,7 @@ export function RulesView() {
       actions={<Button onClick={() => setEditing({ rule: blankRule(), isNew: true })}><PlusIcon />New rule</Button>}
     >
       <div className="space-y-10">
+        <OrganizationLimits />
         <Section title="Your rules" description="When no rule matches, okayed asks you.">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {rules.map((r) => {
@@ -103,6 +104,39 @@ const LIMIT_PRESETS = (now: number): [string, SharedBudget][] => [
 ];
 
 /** Limits are shared budgets: a cap across every rule they cover. Points weigh each action by its risk. */
+/** What an organization's rule means for you: its "allow" leaves it to your rules, it doesn't allow it by itself. */
+const ORG_SAYS = { allow: "Up to you", ask: "Always asks you", deny: "Blocked" } as const;
+
+/** "Allow merging pull requests in acme" → "Merging pull requests in acme": the pill says what it means for you. */
+const orgText = (text: string) => text.replace(/^(Allow|Ask before|Block) /, "").replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * Limits from outside you: your organization's, set from its directory or your sign-in. They sit above your rules,
+ * so they can only narrow them, and only the organization changes them.
+ */
+function OrganizationLimits() {
+  const { snap } = useOkayed();
+  const layers = snap!.policy.layers.filter((l) => l.name !== YOU);
+  return layers.map((l) => {
+    const rules = snap!.policy.described.find((d) => d.layer === l.name)?.rules ?? [];
+    const rest = l.default === "deny" ? "Anything not listed is blocked." : l.default === "abstain" ? "Everything else is up to your rules." : `Anything else: ${l.default}.`;
+    return (
+      <Section key={l.name} title={`Set by ${l.name}`} description={`These come before your rules, and only ${l.name} can change them. ${rest}`}>
+        <div className="divide-y rounded-2xl border bg-card">
+          {rules.length === 0 && <div className="p-4 text-muted-foreground text-sm">Nothing is allowed for you here.</div>}
+          {rules.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 p-3 text-sm">
+              <BuildingIcon className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">{orgText(r.text)}</span>
+              <VerdictPill verdict={r.effect as "allow" | "ask" | "deny"}>{ORG_SAYS[r.effect as "allow" | "ask" | "deny"]}</VerdictPill>
+            </div>
+          ))}
+        </div>
+      </Section>
+    );
+  });
+}
+
 function LimitsSection({ budgets }: { budgets: SharedBudget[] }) {
   const okayed = useOkayed();
   const snap = okayed.snap!;
