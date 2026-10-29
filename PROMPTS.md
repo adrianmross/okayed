@@ -244,3 +244,24 @@ But yes have the core be platform agnostic so we could hook this up with many th
 | `feat(engine): capability packs …`, `feat(design): …` | Any service's actions and resource types as data, with example packs for Slack, email, Cloudflare DNS and S3. |
 | `feat(node): …` | The same API on Node with SQLite and timers, no build step; the smoke test runs on both runtimes. |
 | `feat: approve any service's actions, end to end`, `feat(web): …` | Packs chosen by configuration and sent to the browser, learned target names, Slack and DNS connectors, trusting a CI workflow in Settings, registered actions in the rule editor. |
+
+## 15 — Durable Objects, learning resources, and other permission systems
+
+```text
+What is a durable obj and why is it so important to this implementation? Do you think you can update the learning resources and add some more about cloudflare integration and arch 
+For capabilities, anyway to integrate that or have another package/extension for oauth/openid scopes or saml or scim groups or ucan or other perm based stuff same for resources and principles
+```
+
+The answer explained Durable Objects (one instance per name worldwide, with its own transactional storage and one
+request at a time) and why every guarantee here rests on that single writer per person, then built the rest.
+
+### What came out of prompt 15
+
+| Commit | What |
+|---|---|
+| `feat(engine): …` | Rules and shared limits for `group:<name>`, so one rule covers every agent in a group. |
+| `feat(core): …` | Limits from outside the person (`setCeiling`): layers above their rules that only the deployment sets and that can only narrow; agent groups; a `readRequest` hook for requests in other formats. |
+| `feat(interop): …` | `@okayed/interop`: one principal shape from OIDC claims, SAML attributes, Cloudflare Access and SCIM; an organization's policy by group; a SCIM 2.0 endpoint; OAuth scopes as limits and for downscoping; RFC 9396 `authorization_details` in and out; UCAN delegations in and out. |
+| `feat: …` | On the Worker, the organization's directory is its own Durable Object at `/scim/v2`, reaching into each person's object to set limits or stop everything; limits from sign-in groups without SCIM; the same on Node, tested against a real local OIDC issuer. |
+| `feat(web): …` | Rules shows an organization's limits read-only, above your own. |
+| `docs: …` | `docs/cloudflare.md` (Durable Objects and every binding), `docs/interop.md`; the private architecture page and 3-D models were refreshed, with a Cloudflare scene. |
