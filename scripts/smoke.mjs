@@ -103,6 +103,29 @@ if (packs.some((p) => p.id === "slack")) {
   check(posted.status === "granted" && JSON.parse(posted.grant.content).act === "slack.message.post", "and is granted, signed, for that channel only");
 }
 
+// Requests in other vocabularies: an agent may ask in OAuth's rich authorization request terms (RFC 9396).
+const rich = await call("POST", `${u}/requests`, agentToken, { why: "notes", authorization_details: [{ type: "okayed", actions: ["github.read"], identifier: "github:adrianmross/okayed" }] });
+check(rich.request.act === "github.read" && rich.request.res[0] === "github:adrianmross/okayed", "a request in authorization_details (RFC 9396) reads as okayed's own");
+
+// An organization's identity provider provisions its people over SCIM, where the deployment has a SCIM token.
+const scimOn = (await fetch(`${BASE}/scim/v2/ServiceProviderConfig`)).status === 401;
+const SCIM_TOKEN = process.env.SCIM_TOKEN ?? (/localhost|127\.0\.0\.1/.test(BASE) ? "local-scim-token" : "");
+if (scimOn && SCIM_TOKEN) {
+  const scim = async (method, path, body) => {
+    const r = await fetch(`${BASE}/scim/v2${path}`, { method, headers: { authorization: `Bearer ${SCIM_TOKEN}`, "content-type": "application/scim+json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: r.status, body: r.status === 204 ? null : await r.json() };
+  };
+  const name = `smoke-${Date.now()}@acme.dev`;
+  const made = await scim("POST", "/Users", { userName: name, externalId: name });
+  const group = await scim("POST", "/Groups", { displayName: `Smoke ${Date.now()}`, members: [{ value: made.body.id }] });
+  const found = await scim("GET", `/Users?filter=${encodeURIComponent(`userName eq "${name}"`)}`);
+  check(made.status === 201 && found.body.totalResults === 1 && found.body.Resources[0].groups.length === 1, "SCIM: an identity provider provisions a person and a group, and finds them by filter");
+  const off = await scim("PATCH", `/Users/${made.body.id}`, { Operations: [{ op: "Replace", path: "active", value: "False" }] });
+  check(off.body.active === false, "SCIM: and deactivates them");
+  check((await scim("DELETE", `/Users/${made.body.id}`)).status === 204 && (await scim("DELETE", `/Groups/${group.body.id}`)).status === 204, "SCIM: and removes them");
+  check((await fetch(`${BASE}/scim/v2/Users`, { headers: { authorization: "Bearer wrong" } })).status === 401, "SCIM: a wrong token is refused");
+}
+
 if (cloudflare) {
 // A paired app with a wake URL is nudged through Cloudflare Queues; the nudge carries nothing.
 const { createServer } = await import("node:http");

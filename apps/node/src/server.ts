@@ -19,6 +19,7 @@ import {
   type Connector,
   type PersonIssuer,
 } from "@okayed/core";
+import { ScimDirectory, applyDirectory, ceilingFor, fromOidcClaims, handleScim, personBySubject, readRichRequests, type OrgPolicy } from "@okayed/interop";
 import { SqliteStore } from "./sqlite.ts";
 
 /**
@@ -37,6 +38,11 @@ export interface NodeOptions {
   oidc?: { issuer: string; audience: string };
   /** Drafting with any OpenAI-compatible model; the heuristic otherwise. */
   model?: { baseUrl: string; model: string; apiKey?: string };
+  /**
+   * An organization: its policy sets each person's limits by their groups, from their OIDC token at sign-in, or from
+   * SCIM at /scim/v2 when `scimToken` is set (then removing someone there stops their okayed).
+   */
+  org?: { policy?: OrgPolicy; scimToken?: string; subject?: "externalId" | "userName" | "id" };
   env?: Record<string, string | undefined>;
 }
 
@@ -79,13 +85,31 @@ export function okayedServer(o: NodeOptions): Server {
     return svc;
   };
 
+  const policy: OrgPolicy = o.org?.policy ?? { name: "your organization", default: "abstain", grants: [] };
+  const directory = o.org?.scimToken
+    ? new ScimDirectory(new SqliteStore(db, "~directory"), {
+        onChange: applyDirectory(policy, {
+          personFor: o.oidc ? personBySubject(o.oidc.issuer, o.org.subject) : async () => null,
+          setLimits: (userId, layer) => person(userId).setCeiling("organization", layer),
+          stop: async (userId, reason) => {
+            if (await person(userId).exists()) await person(userId).stop(reason);
+          },
+        }),
+      })
+    : null;
+
   const handle = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
+    if (directory && (url.pathname === "/scim/v2" || url.pathname.startsWith("/scim/v2/"))) {
+      return handleScim(directory, req, url.pathname.slice("/scim/v2".length), { token: o.org!.scimToken!, base: `${url.origin}/scim/v2` });
+    }
     if (url.pathname === "/api" || url.pathname === "/api/") return Response.json({ name: "okayed", runtime: "node", tools: connectors.map((c) => c.id) });
     if (url.pathname === "/api/users" && req.method === "POST") {
       const me = issuers.length ? await personOf(req, issuers) : null;
       const id = me?.userId ?? cryptoRandom.hex(16);
       const token = await person(id).claim();
+      // Without a directory pushing them, an organization's limits come from the groups in the sign-in token.
+      if (me && o.org?.policy && !directory) await person(id).setCeiling("organization", ceilingFor(fromOidcClaims(me.claims), o.org.policy));
       return Response.json(token ? { userId: id, ownerToken: token, issuer: person(id).issuer } : { userId: id, access: true }, { status: token ? 201 : 200 });
     }
     const m = /^\/api\/u\/([0-9a-f]{32})(\/.*)$/.exec(url.pathname);
@@ -94,6 +118,7 @@ export function okayedServer(o: NodeOptions): Server {
     if (!(await svc.exists())) return Response.json({ error: "no such user" }, { status: 404 });
     return handleApi(svc, req, m[2]!, {
       connectors,
+      readRequest: readRichRequests(),
       relyingParty: (origin, r) => {
         const allowed = [new URL(r.url).origin, ...(o.origins ?? [])];
         if (typeof origin !== "string" || !allowed.includes(origin)) throw new OkayedError(400, `passkeys work from ${allowed.join(" or ")}`);

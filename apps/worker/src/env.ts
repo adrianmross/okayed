@@ -1,6 +1,7 @@
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import type { OkayedAgent } from "./agent.ts";
 import type { OkayedChat } from "./chat.ts";
+import type { OkayedDirectory } from "./directory.ts";
 import type { OkayedMcp } from "./mcp.ts";
 import type { WakeMessage } from "./notify.ts";
 
@@ -10,6 +11,7 @@ export interface Env {
   OkayedAgent: DurableObjectNamespace<OkayedAgent>;
   OkayedChat: DurableObjectNamespace<OkayedChat>;
   OkayedMcp: DurableObjectNamespace<OkayedMcp>;
+  OkayedDirectory: DurableObjectNamespace<OkayedDirectory>;
   GRANT_LIFECYCLE: Workflow;
   ISSUER_SECRET: string;
   /** The web app, the playground and the shadcn registry (Workers Static Assets). */
@@ -68,4 +70,11 @@ export interface Env {
   CF_API_TOKEN?: string;
   CF_PAGES_SITES?: string;
   CF_PAGES_WRITE_GROUP?: string;
+
+  /** An organization's policy (JSON, see @okayed/interop's OrgPolicy): what its groups' agents may do. */
+  ORG_POLICY?: string;
+  /** SCIM provisioning at /scim/v2: the bearer token the identity provider is set up with (a secret). */
+  SCIM_TOKEN?: string;
+  /** Which SCIM attribute holds the subject people's sign-in tokens carry: externalId (default), userName or id. */
+  SCIM_SUBJECT?: string;
 }

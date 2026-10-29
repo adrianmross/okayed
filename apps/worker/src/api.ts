@@ -1,7 +1,9 @@
 import { getAgentByName, routeAgentRequest } from "agents";
-import { personOf } from "@okayed/core";
+import { personOf, type JwtClaims } from "@okayed/core";
+import { accessIdentity, ceilingFor, fromAccessIdentity, fromOidcClaims } from "@okayed/interop";
 import { issuersFor, type ApiReply } from "./agent.ts";
 import { consent } from "./consent.ts";
+import { orgPolicy } from "./directory.ts";
 import type { Env } from "./env.ts";
 
 /**
@@ -40,10 +42,29 @@ async function body(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** With Cloudflare Access (or another OIDC provider) in front, the okayed the person's identity owns; otherwise null. */
-async function accessUser(req: Request, env: Env): Promise<string | null> {
+/** With Cloudflare Access (or another OIDC provider) in front, who the person is: their okayed, and their claims. */
+async function signedIn(req: Request, env: Env): Promise<{ userId: string; claims: JwtClaims } | null> {
   const issuers = issuersFor(env);
-  return issuers.length ? ((await personOf(req, issuers))?.userId ?? null) : null;
+  return issuers.length ? personOf(req, issuers) : null;
+}
+
+async function accessUser(req: Request, env: Env): Promise<string | null> {
+  return (await signedIn(req, env))?.userId ?? null;
+}
+
+/**
+ * With an organization's policy and no directory pushing it, each sign-in sets the person's limits from the groups
+ * their identity provider sent: in an OIDC token's claims, or, behind Cloudflare Access, in its identity.
+ */
+async function limitsAtSignIn(req: Request, env: Env, me: { userId: string; claims: JwtClaims }): Promise<void> {
+  if (!env.ORG_POLICY || env.SCIM_TOKEN) return;
+  let principal = null;
+  if (env.ACCESS_TEAM && me.claims.iss === `https://${env.ACCESS_TEAM}.cloudflareaccess.com`) {
+    const token = req.headers.get("cf-access-jwt-assertion") ?? /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1];
+    const identity = token ? await accessIdentity(env.ACCESS_TEAM, token) : null;
+    principal = identity ? fromAccessIdentity(identity, env.ACCESS_TEAM) : null;
+  } else principal = fromOidcClaims(me.claims);
+  if (principal) await (await getAgentByName(env.OkayedAgent, me.userId)).setLimits("organization", ceilingFor(principal, orgPolicy(env)));
 }
 
 /** Turnstile's verdict on the token the welcome page sent. */
@@ -99,13 +120,15 @@ const INFO = {
     "PUT /api/u/:user/policy": "owner: { rules } replaces your rules",
     "PUT /api/u/:user/budgets": "owner: { budgets } limits shared across rules, global or scoped (none by default)",
     "POST /api/u/:user/rules/:key/topup": "owner: reset what a rule (its id) or a shared limit (budget:<id>) has used",
-    "POST /api/u/:user/requests": "agent: { act, res[], why, ttl? }",
+    "POST /api/u/:user/requests": "agent: { act, res[], why, ttl? }, or { authorization_details, why } (RFC 9396)",
+    "PUT /api/u/:user/agents/:agent/groups": "owner: { groups } rules for group:<name> cover the agent",
     "GET /api/u/:user/requests/:id?wait=10": "agent: status, and the grant event once issued",
     "POST /api/u/:user/tools/github/merge": "agent: { grant, owner, repo, number, sha } — merges using okayed's token",
     "POST /api/u/:user/tools/cloudflare/deploy": "agent: { grant, site, env } — deploys a Pages project with a just-in-time Cloudflare API token",
     "POST /api/u/:user/transcribe": "owner: { audio: base64 } → { text } (Whisper on Workers AI)",
     "GET /api/u/:user/archive": "owner: the signed events archived in R2",
     "POST /api/u/:user/verify": "anyone: { event | grantId, aud, act, res, consume? }",
+    "/scim/v2": "an organization's identity provider: SCIM 2.0 Users and Groups (with SCIM_TOKEN); groups set limits, removal stops everything",
     "GET /api/u/:user/issuer": "anyone: the user's issuer key",
   },
 };
@@ -135,21 +158,28 @@ export const app = {
       const res = await routeAgentRequest(fwd, env, { cors: true, onBeforeConnect: ownerOnly, onBeforeRequest: ownerOnly });
       return res ?? json({ error: "not found" }, 404);
     }
+    if (url.pathname === "/scim/v2" || url.pathname.startsWith("/scim/v2/")) {
+      // The organization's identity provider provisions people and groups here; one directory for the deployment.
+      if (!env.SCIM_TOKEN) return json({ error: "SCIM isn't set up here (set SCIM_TOKEN)" }, 404);
+      return env.OkayedDirectory.get(env.OkayedDirectory.idFromName("directory")).fetch(req);
+    }
     if (url.pathname === "/api" || url.pathname === "/api/") return json(INFO);
     if (url.pathname.startsWith("/r/") && url.pathname.endsWith(".json") && env.ASSETS) return registryItem(req, url, env.ASSETS);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : json(INFO);
     const ip = req.headers.get("cf-connecting-ip");
     if (url.pathname === "/api/me" && req.method === "GET") {
-      const me = await accessUser(req, env);
-      return me ? json({ userId: me, access: true }) : json({ access: false }, 404);
+      const me = await signedIn(req, env);
+      if (me) await limitsAtSignIn(req, env, me);
+      return me ? json({ userId: me.userId, access: true }) : json({ access: false }, 404);
     }
     if (url.pathname === "/api/users" && req.method === "POST") {
       if (env.SIGNUP_LIMIT && !(await env.SIGNUP_LIMIT.limit({ key: ip ?? "unknown" })).success) return json({ error: "Too many new accounts from here. Try again in a minute." }, 429);
-      const me = await accessUser(req, env);
+      const me = await signedIn(req, env);
       if (me) {
         // Access already knows who this is; their okayed is theirs, with no owner token to keep.
-        const r = (await (await getAgentByName(env.OkayedAgent, me)).claim()) as unknown as ApiReply;
-        return r.status === 201 || r.status === 409 ? json({ userId: me, access: true }) : send(r);
+        const r = (await (await getAgentByName(env.OkayedAgent, me.userId)).claim()) as unknown as ApiReply;
+        if (r.status === 201 || r.status === 409) await limitsAtSignIn(req, env, me);
+        return r.status === 201 || r.status === 409 ? json({ userId: me.userId, access: true }) : send(r);
       }
       if (env.TURNSTILE_SECRET && !(await human(env.TURNSTILE_SECRET, (await body(req)).turnstile, ip))) return json({ error: "The challenge didn't pass. Try again." }, 403);
       const id = newUserId();
