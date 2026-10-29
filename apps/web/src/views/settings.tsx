@@ -97,7 +97,8 @@ export function SettingsView() {
                   <ItemDescription>{(() => {
                     const a = snap.agents.find((x) => x.id === id);
                     if (!a) return "The demo assistant in Chat";
-                    return a.workload ? `Proves itself as ${a.workload.subject}, from ${new URL(a.workload.issuer).hostname}` : "Connected with a token";
+                    const how = a.workload ? `Proves itself as ${a.workload.subject}, from ${new URL(a.workload.issuer).hostname}` : "Connected with a token";
+                    return a.groups?.length ? `${how} · in ${a.groups.join(", ")}` : how;
                   })()}</ItemDescription>
                 </ItemContent>
                 {snap.agents.some((a) => a.id === id) && (
