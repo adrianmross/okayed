@@ -5,6 +5,8 @@ import type { Condition, Effect, Layer, Policy, Rule, SharedBudget, Unix, Usage 
 /** Who is asking and what has been spent; both optional so a bare "may this happen?" still works. */
 export interface Context {
   agent?: string;
+  /** The agent's groups. A rule for `group:<name>` covers every agent in that group. */
+  groups?: string[];
   usage?: Usage;
   /** Risk this use would draw from a budget. Defaults to the action's cost on the resources asked about. */
   cost?: number;
@@ -58,18 +60,24 @@ export function specificity(rule: Rule): number {
   return literal(rule.act) * 1_000_000 + literal(rule.res) * 1000 + literal(rule.agent);
 }
 
-export function ruleApplies(rule: Rule, act: string, res: string, now: Unix, agent?: string): boolean {
+/** Whether an agent pattern names this agent: by its id (`agent:ci`), or by one of its groups (`group:deployers`). */
+export function matchAgent(pattern: string, agent: string | undefined, groups: string[] = []): boolean {
+  if (agent === undefined) return false;
+  return matchAct(pattern, agent) || groups.some((g) => matchAct(pattern, `group:${g}`));
+}
+
+export function ruleApplies(rule: Rule, act: string, res: string, now: Unix, agent?: string, groups?: string[]): boolean {
   if (rule.from !== undefined && now < rule.from) return false;
   if (rule.until !== undefined && now >= rule.until) return false;
-  if (rule.agent !== undefined && (agent === undefined || !matchAct(rule.agent, agent))) return false;
+  if (rule.agent !== undefined && !matchAgent(rule.agent, agent, groups)) return false;
   return matchAct(rule.act, act) && matchRes(rule.res, res);
 }
 
-function poolCovers(b: SharedBudget, act: string, res: string, agent?: string): boolean {
+function poolCovers(b: SharedBudget, act: string, res: string, ctx: Context): boolean {
   const s = b.scope ?? {};
   if (s.act !== undefined && !matchAct(s.act, act)) return false;
   if (s.res !== undefined && !matchRes(s.res, res)) return false;
-  if (s.agent !== undefined && (agent === undefined || !matchAct(s.agent, agent))) return false;
+  if (s.agent !== undefined && !matchAgent(s.agent, ctx.agent, ctx.groups)) return false;
   return true;
 }
 
@@ -94,7 +102,7 @@ export function budgetLeft(rule: Rule, usage: Usage | undefined, cost: number): 
 export function decideLayer(layer: Layer, act: string, res: string, now: Unix, ctx: Context = {}): LayerVerdict {
   let best: Rule | undefined;
   for (const rule of layer.rules) {
-    if (!ruleApplies(rule, act, res, now, ctx.agent)) continue;
+    if (!ruleApplies(rule, act, res, now, ctx.agent, ctx.groups)) continue;
     if (!best || specificity(rule) > specificity(best) || (specificity(rule) === specificity(best) && STRICT[rule.effect] > STRICT[best.effect])) {
       best = rule;
     }
@@ -138,7 +146,7 @@ export function decide(policy: Policy, act: string, res: string, now: Unix, ctx:
   }
   const voting = layers.filter((v) => v.verdict !== "abstain");
   const cost = ctx.cost ?? riskCost(act, [res]);
-  const pools = (policy.budgets ?? []).filter((b) => (b.until === undefined || now < b.until) && poolCovers(b, act, res, ctx.agent));
+  const pools = (policy.budgets ?? []).filter((b) => (b.until === undefined || now < b.until) && poolCovers(b, act, res, ctx));
   const tallies = pools.filter((b) => b.counts === "all").map((b) => ({ key: `budget:${b.id}`, cost }));
   const none = { charges: [], when: [], tallies };
   if (voting.length === 0) return { verdict: "deny", reason: "Refused: no layer has a rule for this.", layers, caps, ...none };
