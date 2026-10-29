@@ -10,22 +10,25 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api", "/api/*", "/agents/*", "/mcp", "/mcp/*", "/authorize", "/authorize/*", "/token", "/register", "/.well-known/*", "/r/*"]
+    "run_worker_first": ["/api", "/api/*", "/agents/*", "/mcp", "/mcp/*", "/authorize", "/authorize/*", "/token", "/register", "/.well-known/*", "/r/*", "/scim/*"]
   },
   // Workers AI: Llama 3.3 drafts and explains, Whisper hears voice okays. Free daily allocation.
   "ai": { "binding": "AI" },
-  // Durable Objects (SQLite-backed, free plan): okayed per person, the demo chat per person, one per MCP session.
+  // Durable Objects (SQLite-backed, free plan): okayed per person, the demo chat per person, one per MCP session,
+  // and one directory for the organization's SCIM provisioning.
   "durable_objects": {
     "bindings": [
       { "name": "OkayedAgent", "class_name": "OkayedAgent" },
       { "name": "OkayedChat", "class_name": "OkayedChat" },
-      { "name": "OkayedMcp", "class_name": "OkayedMcp" }
+      { "name": "OkayedMcp", "class_name": "OkayedMcp" },
+      { "name": "OkayedDirectory", "class_name": "OkayedDirectory" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["OkayedAgent"] },
     { "tag": "v2", "new_sqlite_classes": ["OkayedChat"] },
-    { "tag": "v3", "new_sqlite_classes": ["OkayedMcp"] }
+    { "tag": "v3", "new_sqlite_classes": ["OkayedMcp"] },
+    { "tag": "v4", "new_sqlite_classes": ["OkayedDirectory"] }
   ],
   // The grant lifecycle: propose → await confirm → issue → await revoke or expiry.
   "workflows": [
@@ -55,10 +58,11 @@
     "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174"
     // Optional: "CAPABILITY_PACKS" (e.g. "slack,email,cloudflare-dns,aws-s3"), "AI_GATEWAY" (an AI Gateway id),
     // "ACCESS_TEAM" and "ACCESS_AUD" (Cloudflare Access), "OIDC_ISSUER" and "OIDC_AUDIENCE" (any OIDC provider),
-    // "CF_ACCOUNT_ID" and "CF_PAGES_SITES" (real deploys), "DEMO": "0".
+    // "CF_ACCOUNT_ID" and "CF_PAGES_SITES" (real deploys), "ORG_POLICY" (an organization's policy, JSON) with
+    // "SCIM_SUBJECT", "DEMO": "0".
   },
   // Secrets (wrangler secret put): ISSUER_SECRET (64 hex chars); optional GITHUB_TOKEN, TURNSTILE_SECRET,
-  // CF_API_TOKEN (Account API Tokens: Edit, for real deploys), DRAFT_API_KEY.
+  // CF_API_TOKEN (Account API Tokens: Edit, for real deploys), DRAFT_API_KEY, SCIM_TOKEN (turns on /scim/v2).
   "observability": { "enabled": true },
   "env": {
     // `wrangler dev --env local`: everything but Workers AI, so it runs without a Cloudflare login.
@@ -67,7 +71,8 @@
         "bindings": [
           { "name": "OkayedAgent", "class_name": "OkayedAgent" },
           { "name": "OkayedChat", "class_name": "OkayedChat" },
-          { "name": "OkayedMcp", "class_name": "OkayedMcp" }
+          { "name": "OkayedMcp", "class_name": "OkayedMcp" },
+          { "name": "OkayedDirectory", "class_name": "OkayedDirectory" }
         ]
       },
       "workflows": [
@@ -84,7 +89,8 @@
       },
       // Locally R2 is simulated, so the archive is on.
       "r2_buckets": [{ "binding": "ARCHIVE", "bucket_name": "okayed-events" }],
-      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:8787", "CAPABILITY_PACKS": "slack,email,cloudflare-dns,aws-s3" }
+      // SCIM_TOKEN here is for local testing only; a deployed Worker gets it with `wrangler secret put`.
+      "vars": { "DRAFTER": "heuristic", "WEB_ORIGINS": "http://localhost:5173,http://localhost:5174,http://localhost:8787", "CAPABILITY_PACKS": "slack,email,cloudflare-dns,aws-s3", "SCIM_TOKEN": "local-scim-token" }
     }
   }
 }

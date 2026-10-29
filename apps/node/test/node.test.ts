@@ -79,3 +79,91 @@ describe("okayed on Node", () => {
     expect((await call("GET", `/api/u/${"0".repeat(32)}/state`, me.ownerToken)).status).toBe(404);
   });
 });
+
+describe("an organization on Node: OIDC sign-in, SCIM, and rich requests", async () => {
+  const { createServer } = await import("node:http");
+  // A tiny OIDC issuer: discovery, a JWKS, and ID tokens signed with its RSA key.
+  const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const jwk = { ...(await crypto.subtle.exportKey("jwk", keys.publicKey)), kid: "k1", use: "sig", alg: "RS256" };
+  let issuer = "";
+  const idp = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/.well-known/openid-configuration") return void res.end(JSON.stringify({ issuer, jwks_uri: `${issuer}/jwks` }));
+    if (req.url === "/jwks") return void res.end(JSON.stringify({ keys: [jwk] }));
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  const b64 = (b: Uint8Array | string) => Buffer.from(b).toString("base64url");
+  const idToken = async (sub: string, extra: Record<string, unknown> = {}) => {
+    const now = Math.floor(Date.now() / 1000);
+    const head = `${b64(JSON.stringify({ alg: "RS256", kid: "k1", typ: "JWT" }))}.${b64(JSON.stringify({ iss: issuer, aud: "okayed", sub, iat: now, exp: now + 600, ...extra }))}`;
+    return `${head}.${b64(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", keys.privateKey, new TextEncoder().encode(head))))}`;
+  };
+
+  const policy = { name: "Acme", default: "deny" as const, grants: [{ to: "*", effect: "allow" as const, act: "github.read" }, { to: "release-managers", effect: "allow" as const, act: "github.pr.merge", res: "github:acme/**" }] };
+  let base = "";
+  let server: ReturnType<typeof okayedServer>;
+  let plain: ReturnType<typeof okayedServer>;
+  let plainBase = "";
+  beforeAll(async () => {
+    await new Promise<void>((r) => idp.listen(0, r));
+    issuer = `http://localhost:${(idp.address() as AddressInfo).port}`;
+    server = okayedServer({ secret: "55".repeat(32), oidc: { issuer, audience: "okayed" }, org: { policy, scimToken: "scim-test" } });
+    plain = okayedServer({ secret: "66".repeat(32), oidc: { issuer, audience: "okayed" }, org: { policy } });
+    await new Promise<void>((r) => server.listen(0, r));
+    await new Promise<void>((r) => plain.listen(0, r));
+    base = `http://localhost:${(server.address() as AddressInfo).port}`;
+    plainBase = `http://localhost:${(plain.address() as AddressInfo).port}`;
+  });
+  afterAll(() => void [server, plain, idp].forEach((s) => s.close()));
+
+  const call = async (method: string, url: string, token?: string, body?: unknown) => {
+    const r = await fetch(url, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: r.status, body: (r.status === 204 ? {} : await r.json()) as Record<string, any> };
+  };
+  const PR = "github:acme/web/pull/7@3f9a1c2e4b5d6f708192a3b4c5d6e7f801234567";
+
+  it("provisions a person before they sign in, follows their groups, and stops them when they're removed", async () => {
+    const scim = (method: string, path: string, body?: unknown) => call(method, `${base}/scim/v2${path}`, "scim-test", body);
+    expect((await call("GET", `${base}/scim/v2/Users`, "wrong")).status).toBe(401);
+    const ada = (await scim("POST", "/Users", { userName: "ada@acme.dev", externalId: "00u1" })).body;
+
+    // Ada signs in with her ID token; her okayed already has Acme's limits.
+    const token = await idToken("00u1");
+    const me = (await call("POST", `${base}/api/users`, token)).body;
+    const u = `${base}/api/u/${me.userId}`;
+    await call("PUT", `${u}/policy`, token, { rules: [] });
+    const { body: agent } = await call("POST", `${u}/agents`, token, { name: "ci" });
+    expect((await call("POST", `${u}/requests`, agent.token, { act: "github.pr.merge", res: [PR], why: "release" })).body).toMatchObject({ status: "denied", reason: "Refused by Acme: nothing here covers github.pr.merge." });
+
+    // Acme makes her a release manager; her agent asks in RFC 9396's words, and she okays it.
+    const group = (await scim("POST", "/Groups", { displayName: "Release-Managers", members: [{ value: ada.id }] })).body;
+    expect(group.members).toHaveLength(1);
+    const asked = (await call("POST", `${u}/requests`, agent.token, { why: "release", authorization_details: [{ type: "okayed", actions: ["github.pr.merge"], identifier: PR }] })).body;
+    expect(asked.status).toBe("pending");
+    await call("POST", `${u}/cards/${asked.cardId}/confirm`, token);
+    let st: Record<string, any> = {};
+    for (let i = 0; i < 20 && st.status !== "granted"; i++) st = (await call("GET", `${u}/requests/${asked.request.id}?wait=1`, agent.token)).body;
+    expect(st.status).toBe("granted");
+
+    // Acme removes her: the merge she okayed is taken back at once.
+    expect((await scim("DELETE", `/Users/${ada.id}`)).status).toBe(204);
+    const state = (await call("GET", `${u}/state`, token)).body;
+    expect(state.grants.map((g: { status: string; revokeReason: string }) => [g.status, g.revokeReason])).toEqual([["revoked", "removed from Acme's directory"]]);
+    expect(state.policy.described[0].layer).toBe("Acme");
+  });
+
+  it("without a directory, takes each person's limits from the groups in their sign-in token", async () => {
+    // Acme lets release managers merge, and the default rules let checked merges go ahead: so it does.
+    const lead = await idToken("00u9", { groups: ["Release-Managers"] });
+    const me = (await call("POST", `${plainBase}/api/users`, lead)).body;
+    const u = `${plainBase}/api/u/${me.userId}`;
+    const { body: agent } = await call("POST", `${u}/agents`, lead, { name: "ci" });
+    expect((await call("POST", `${u}/requests`, agent.token, { act: "github.pr.merge", res: [PR], why: "x" })).body.status).toBe("approving");
+    const other = await idToken("00u8");
+    const them = (await call("POST", `${plainBase}/api/users`, other)).body;
+    const { body: theirs } = await call("POST", `${plainBase}/api/u/${them.userId}/agents`, other, { name: "ci" });
+    expect((await call("POST", `${plainBase}/api/u/${them.userId}/requests`, theirs.token, { act: "github.pr.merge", res: [PR], why: "x" })).body.status).toBe("denied");
+    expect((await call("GET", `${plainBase}/scim/v2/Users`, "anything")).status).toBe(404);
+  });
+});

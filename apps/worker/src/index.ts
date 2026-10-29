@@ -6,6 +6,7 @@ import { wake, type WakeMessage } from "./notify.ts";
 
 export { OkayedAgent } from "./agent.ts";
 export { OkayedChat } from "./chat.ts";
+export { OkayedDirectory } from "./directory.ts";
 export { OkayedMcp } from "./mcp.ts";
 export { GrantLifecycle } from "./workflow.ts";
 

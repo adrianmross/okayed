@@ -26,7 +26,8 @@ import {
   type Snapshot,
 } from "@okayed/core";
 import { cloudflareDnsEdit, cloudflarePagesDeploy, cloudflareToken, githubAppCredential, githubMerge, prHead, slackPost, zoneScope } from "@okayed/connectors";
-import { parseRes } from "@okayed/engine";
+import { parseRes, type Layer } from "@okayed/engine";
+import { readRichRequests } from "@okayed/interop";
 import { sha256Hex, type Assurance, type NostrEvent } from "@okayed/grant";
 import { DurableStore, WorkersAIDrafter } from "./adapters.ts";
 import { QueueNotifier } from "./notify.ts";
@@ -195,6 +196,19 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
     return out;
   }
 
+  /** Limits from outside the person: their organization's, from its directory or their sign-in. Never the person's API. */
+  async setLimits(id: string, layer: Layer | null): Promise<void> {
+    await this.svc.setCeiling(id, layer);
+    await this.broadcastSnapshot();
+  }
+
+  /** The organization removed or deactivated the person: take back everything. Nothing to do if they never signed in. */
+  async orgStop(reason: string): Promise<void> {
+    if (!(await this.svc.exists())) return;
+    await this.svc.stop(reason);
+    await this.broadcastSnapshot();
+  }
+
   /**
    * The person's HTTP API: okayed core's platform-neutral handler, with Cloudflare's pieces as hooks: Access as proof
    * of the person, connectors for real actions, rate limits, metrics, voice and the R2 archive.
@@ -206,6 +220,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
       relyingParty: (o, r) => this.rp(o, r),
       isOwner: async (r) => (await personOf(r, issuersFor(this.env)))?.userId === this.name,
       allowAgent: async (agent) => !this.env.AGENT_LIMIT || (await this.env.AGENT_LIMIT.limit({ key: `${this.name}:${agent}` })).success,
+      readRequest: readRichRequests(),
       beforeRequest: (input) => this.checkHeads(input),
       extra: async (route, { body }) => {
         if (route === "POST /transcribe") return this.transcribe(body.audio);
