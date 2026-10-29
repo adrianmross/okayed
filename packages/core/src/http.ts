@@ -22,6 +22,11 @@ export interface ApiHooks {
   isOwner?: (req: Request) => Promise<boolean>;
   /** Rate limits and the like, per agent. Return false to refuse with 429. */
   allowAgent?: (agent: string) => Promise<boolean>;
+  /**
+   * Reads requests written in other vocabularies (OAuth `authorization_details`, a UCAN, a scope string) as
+   * okayed's `{ act, res, why }`. Return the body unchanged when it's already okayed's.
+   */
+  readRequest?: (body: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
   /** Runs before an agent's request is filed, e.g. to check a PR's head commit against GitHub. */
   beforeRequest?: (input: Record<string, unknown>) => Promise<void>;
   /** The platform's own routes (voice, archives…). Return undefined when the route isn't theirs. */
@@ -100,8 +105,9 @@ async function route(svc: OkayedService, req: Request, path: string, url: URL, h
   const agent = !isOwner && token ? await svc.agentFor(token) : null;
   if (agent) {
     if (h.allowAgent && !(await h.allowAgent(agent))) throw new OkayedError(429, "too many requests; slow down");
-    const b = await readBody(req);
+    let b = await readBody(req);
     if (r === "POST /requests") {
+      if (h.readRequest) b = await h.readRequest(b);
       await h.beforeRequest?.(b);
       const out = await svc.submitRequest(agent, b);
       h.observe?.("request", out.status, out.request.act);
@@ -159,6 +165,7 @@ async function route(svc: OkayedService, req: Request, path: string, url: URL, h
   if ((x = /^POST \/grants\/([0-9a-f]{64})\/revoke$/.exec(r))) return changed(svc.revoke(x[1]!, typeof b.reason === "string" && b.reason ? b.reason : undefined));
   const decoded = decodeURIComponent(r);
   if ((x = /^DELETE \/agents\/(agent:[a-z0-9-]+)$/.exec(decoded))) return changed(svc.removeAgent(x[1]!));
+  if ((x = /^PUT \/agents\/(agent:[a-z0-9-]+)\/groups$/.exec(decoded))) return changed(svc.setAgentGroups(x[1]!, b.groups));
   if ((x = /^POST \/rules\/(.+)\/topup$/.exec(decoded))) return changed(svc.topUp(x[1]!));
   if ((x = /^DELETE \/rules\/(.+)$/.exec(decoded))) return changed(svc.removeRule(x[1]!));
   const extra = await h.extra?.(r, { req, caller, body: b, url });

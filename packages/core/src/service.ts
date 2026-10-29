@@ -77,6 +77,8 @@ const CHAT_MAX = 100;
 const REQUEST_TTL = 30 * 60;
 const CHAT_CARD_WAIT = 30 * 60;
 
+const GROUP = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "agent";
 }
@@ -175,6 +177,51 @@ export class OkayedService implements FlowTarget {
     });
   }
 
+  /** Puts an agent in groups, so rules and limits for `group:<name>` cover it. An empty list takes it out of all. */
+  async setAgentGroups(id: string, groups: unknown): Promise<string[]> {
+    if (!Array.isArray(groups) || groups.length > 20 || !groups.every((g) => typeof g === "string" && GROUP.test(g))) {
+      throw new OkayedError(400, "groups must be up to 20 lowercase names, e.g. deployers");
+    }
+    const next = [...new Set(groups as string[])];
+    return this.d.store.transaction(async (tx) => {
+      const a = await tx.get<AgentRecord>(id);
+      if (!a) throw new OkayedError(404, `no agent ${id}`);
+      const { groups: _old, ...rest } = a;
+      await tx.put<AgentRecord>(id, next.length ? { ...rest, groups: next } : rest);
+      await this.audit(tx, { type: "agent", text: next.length ? `${id} is in ${next.join(", ")}.` : `${id} is in no groups.`, ref: id });
+      return next;
+    });
+  }
+
+  /**
+   * Limits set from outside the person: their organization's (from its directory or identity provider), a token's
+   * OAuth scopes, a regulator's. Each is a layer above the person's own rules, so it can only narrow them: a limit
+   * that blocks wins, and one that allows still leaves the person's rules to decide. Only the deployment sets these;
+   * the person's API can't. `null` removes one.
+   */
+  async setCeiling(id: string, layer: Layer | null): Promise<void> {
+    if (!/^[a-z0-9][a-z0-9:._-]{0,63}$/.test(id)) throw new OkayedError(400, "a limit's id must be a short lowercase name");
+    if (layer) {
+      const problems = [
+        ...(typeof layer.name === "string" && layer.name.trim() ? [] : ["needs a name"]),
+        ...(["allow", "ask", "deny", "abstain"].includes(layer.default) ? [] : ["default must be allow, ask, deny or abstain"]),
+        ...(Array.isArray(layer.rules) ? layer.rules.flatMap((r, i) => checkRule(r).map((p) => `rule ${i + 1}: ${p}`)) : ["rules must be a list"]),
+      ];
+      if (problems.length) throw new OkayedError(400, `limit ${id}: ${problems.join("; ")}`);
+    }
+    await this.d.store.transaction(async (tx) => {
+      const key = `ceiling:${id}`;
+      const before = await tx.get<Layer>(key);
+      if (JSON.stringify(before ?? null) === JSON.stringify(layer)) return;
+      if (layer) await tx.put(key, layer);
+      else await tx.delete(key);
+      const text = !layer
+        ? `Limits from ${before?.name ?? id} were removed.`
+        : `Limits from ${layer.name} ${before ? "changed" : "now apply"}: ${layer.rules.length} rule(s), and ${layer.default === "deny" ? "anything else is blocked" : layer.default === "abstain" ? "no say on anything else" : `anything else is ${layer.default}`}.`;
+      await this.audit(tx, { type: "policy", text });
+    });
+  }
+
   /** The agent a bearer token belongs to: one of okayed's agent tokens, or a trusted workload's identity token. */
   async agentFor(token: string | null | undefined): Promise<string | null> {
     if (!token) return null;
@@ -252,7 +299,7 @@ export class OkayedService implements FlowTarget {
       const policy = await this.policy(tx);
       const targets = await this.targets(tx);
       const usage = await this.usage(tx);
-      const result = narrowGrant({ utterance: "", proposal: request, requests: [request], targets, policy, now, select: request.id, usage });
+      const result = narrowGrant({ utterance: "", proposal: request, requests: [request], targets, policy, now, select: request.id, usage, groups: await this.groups(tx) });
       const rec: RequestRecord = { request, status: "pending", ...(ref ? { ref } : {}) };
       if (ref) await tx.put(`ref:${agentId}:${ref}`, request.id);
       await this.audit(tx, { type: "request", text: describeRequestSentence(request), ref: request.id, event });
@@ -466,7 +513,7 @@ export class OkayedService implements FlowTarget {
       const policy = await this.policy(tx);
       const targets = await this.targets(tx);
       const pending = draft.intent === "grant" ? await this.pendingRequests(tx, now) : [];
-      const card = chatCard(`c_${this.d.random.hex(8)}`, text, draft, { policy, targets, pending, now, usage: await this.usage(tx) });
+      const card = chatCard(`c_${this.d.random.hex(8)}`, text, draft, { policy, targets, pending, now, usage: await this.usage(tx), groups: await this.groups(tx) });
       card.drafter = this.d.drafter.name;
       await tx.put(`card:${card.id}`, card);
       await this.say(tx, { role: "okayed", text: card.sentence, cardId: card.id });
@@ -693,7 +740,8 @@ export class OkayedService implements FlowTarget {
     if (card.status !== "confirming") return null;
     const ttl = card.ttl ?? card.draft.exp - card.draft.nbf;
     const draft: GrantDraft = { ...card.draft, nbf: now, exp: now + ttl };
-    const ctx = { agent: draft.aud };
+    const groups = (await this.groups(this.d.store))[draft.aud];
+    const ctx = { agent: draft.aud, ...(groups ? { groups } : {}) };
     // A policy approval names the policies it draws on; the transaction below re-checks them before charging.
     if (assurance.method === "policy") {
       const planned = decideAll(await this.policy(this.d.store), draft.act, draft.res, now, { ...ctx, usage: await this.usage(this.d.store) });
@@ -860,10 +908,18 @@ export class OkayedService implements FlowTarget {
     return meta;
   }
 
-  private async policy(tx: Pick<Store, "get">): Promise<Policy> {
-    const ceiling = await tx.get<Layer>("ceiling");
+  /** Limits from outside (`setCeiling`) above, the person's own rules last. */
+  private async policy(tx: Pick<Store, "get" | "list">): Promise<Policy> {
+    const ceilings = [...(await tx.list<Layer>("ceiling:")).values()];
     const budgets = await this.budgets(tx);
-    return { layers: [...(ceiling ? [ceiling] : []), await this.layer(tx)], ...(budgets.length ? { budgets } : {}) };
+    return { layers: [...ceilings, await this.layer(tx)], ...(budgets.length ? { budgets } : {}) };
+  }
+
+  /** Each agent's groups, for rules that name a group. */
+  private async groups(tx: Pick<Store, "list">): Promise<Record<string, string[]>> {
+    const out: Record<string, string[]> = {};
+    for (const a of (await tx.list<AgentRecord>("agent:")).values()) if (a.groups?.length) out[a.id] = a.groups;
+    return out;
   }
 
   private async layer(tx: Pick<Store, "get">): Promise<Layer> {

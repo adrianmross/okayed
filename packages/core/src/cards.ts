@@ -63,6 +63,7 @@ export interface ChatWorld {
   pending: Request[];
   now: number;
   usage?: Usage;
+  groups?: Record<string, string[]>;
 }
 
 /** Turns the model's draft of what the person said into a card, with the engine deciding everything in it. */
@@ -92,7 +93,7 @@ export function chatCard(id: string, text: string, draft: Draft, w: ChatWorld): 
     };
   }
 
-  const result = narrowGrant({ utterance: text, proposal: draft.grant, requests: w.pending, targets: w.targets, policy: w.policy, now, ...(w.usage ? { usage: w.usage } : {}) });
+  const result = narrowGrant({ utterance: text, proposal: draft.grant, requests: w.pending, targets: w.targets, policy: w.policy, now, ...(w.usage ? { usage: w.usage } : {}), ...(w.groups ? { groups: w.groups } : {}) });
   if (result.kind === "grant") return { ...grantCard(id, result, "chat", now), utterance: text };
   if (result.kind === "question") return sayingCard(id, "question", text, result.question, now, { question: result.question, options: result.options, beyond: result.beyond });
   return sayingCard(id, "refuse", text, result.reason, now, { beyond: result.beyond, summary: summarize(result), ...(result.decision ? { decision: decisionView(result.decision) } : {}) });
