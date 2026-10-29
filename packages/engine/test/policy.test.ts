@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decide, decideAll, defaultPolicy, lint, personalLayer, type Layer, type Policy, type Rule } from "../src/index.ts";
+import { decide, decideAll, defaultPolicy, describeRule, lint, personalLayer, type Layer, type Policy, type Rule } from "../src/index.ts";
 import { NOW, SHA } from "./fixtures.ts";
 
 const PR = `github:adrianmross/okayed/pull/182@${SHA}`;
@@ -42,6 +42,16 @@ describe("standing policies", () => {
   it("only for the agent they name", () => {
     expect(decide(you(mergeAnything), "github.pr.merge", PR, NOW, { agent: "agent:buzz" }).verdict).toBe("ask");
     expect(decide(you(mergeAnything), "github.pr.merge", PR, NOW, {}).verdict).toBe("ask");
+  });
+
+  it("or for every agent in a group they name", () => {
+    const deployers: Rule = { id: "g", effect: "allow", act: "site.deploy", res: "site:*/staging", agent: "group:deployers" };
+    const site = "site:openmeadow.org/staging";
+    expect(decide(you(deployers), "site.deploy", site, NOW, { agent: "agent:ci", groups: ["deployers"] }).verdict).toBe("allow");
+    expect(decide(you(deployers), "site.deploy", site, NOW, { agent: "agent:ci", groups: ["readers"] }).verdict).toBe("ask");
+    expect(decide(you(deployers), "site.deploy", site, NOW, { agent: "agent:ci" }).verdict).toBe("ask");
+    // A group is only ever a name the agent answers to, never the agent itself.
+    expect(decide(you(deployers), "site.deploy", site, NOW, { agent: "group:deployers" }).verdict).toBe("allow");
   });
 
   it("only within their horizon", () => {
@@ -157,5 +167,25 @@ describe("lint", () => {
   it("flags unknown actions and ended rules; the default posture is clean", () => {
     expect(lint(you({ id: "u", effect: "ask", act: "aws.*" }, { id: "e", effect: "allow", act: "github.read", until: NOW - 5 }), NOW).map((w) => w.rule)).toEqual(["u", "e"]);
     expect(lint(defaultPolicy(), NOW)).toEqual([]);
+  });
+});
+
+describe("limits from outside the person", () => {
+  const org: Layer = { name: "your organization", default: "deny", rules: [{ id: "org-1", effect: "allow", act: "github.*", res: "github:adrianmross/**" }] };
+  const policy: Policy = { layers: [org, personalLayer()] };
+
+  it("block anything they don't cover, whatever the person's rules say", () => {
+    const d = decide(policy, "site.deploy", "site:openmeadow.org/staging", NOW, ASSISTANT);
+    expect(d.verdict).toBe("deny");
+    expect(d.reason).toBe("Refused by your organization: nothing here covers site.deploy.");
+  });
+
+  it("leave what they allow to the person's rules", () => {
+    expect(decide(policy, "github.pr.merge", PR, NOW, ASSISTANT).verdict).toBe("allow");
+    expect(decide({ layers: [org, personalLayer([])] }, "github.pr.merge", PR, NOW, ASSISTANT).verdict).toBe("ask");
+  });
+
+  it("read in words, with groups named as such", () => {
+    expect(describeRule({ id: "g", effect: "allow", act: "site.deploy", agent: "group:deployers" }, NOW)).toBe("Allow deploying sites for agents in deployers");
   });
 });

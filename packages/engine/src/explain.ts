@@ -101,6 +101,11 @@ export interface RuleParts {
   each?: string;
 }
 
+/** An agent pattern as people read it: `agent:assistant` → "assistant", `group:deployers` → "agents in deployers". */
+function whoLabel(pattern: string): string {
+  return pattern.startsWith("group:") ? `agents in ${pattern.slice(6)}` : pattern.replace(/^agent:/, "");
+}
+
 function day(t: Unix): string {
   return new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
@@ -110,7 +115,7 @@ export function ruleParts(r: Rule, now: Unix, usage?: Usage): RuleParts {
     effect: r.effect === "allow" ? "Allow" : r.effect === "ask" ? "Ask before" : "Block",
     what: r.act === "*" ? "anything" : r.act.endsWith("*") ? `anything under ${r.act.replace(/\.?\*$/, "")}` : CATALOG[r.act]?.noun ?? r.act,
   };
-  if (r.agent) parts.agent = r.agent.replace(/^agent:/, "");
+  if (r.agent) parts.agent = whoLabel(r.agent);
   if (r.res && r.res !== "**") parts.where = patternLabel(r.res);
   if (r.when?.length) parts.only = r.when.map((c) => (c.c === "checks.pass" ? "checks pass" : c.c === "before" && typeof c.v === "number" ? `before ${day(c.v)}` : c.c)).join(" and ");
   if (!r.budget && r.effect === "allow" && usage?.[r.id]?.uses) parts.budget = `used ${usage[r.id]!.uses} time${usage[r.id]!.uses === 1 ? "" : "s"}`;
@@ -145,7 +150,7 @@ export function describeRule(r: Rule, now: Unix, usage?: Usage): string {
 export function describeBudget(b: SharedBudget, now: Unix, usage?: Usage): { scope: string; left: string; horizon?: string; counts: string } {
   const s = b.scope ?? {};
   const what = s.act ? (s.act.endsWith("*") ? `anything under ${s.act.replace(/\.?\*$/, "")}` : CATALOG[s.act]?.noun ?? s.act) : "everything";
-  const scope = [what, s.agent ? `by ${s.agent.replace(/^agent:/, "")}` : "", s.res ? `in ${patternLabel(s.res)}` : ""].filter(Boolean).join(" ");
+  const scope = [what, s.agent ? `by ${whoLabel(s.agent)}` : "", s.res ? `in ${patternLabel(s.res)}` : ""].filter(Boolean).join(" ");
   const spent = usage?.[`budget:${b.id}`] ?? { uses: 0, risk: 0 };
   const left = [b.uses !== undefined ? `${Math.max(0, b.uses - spent.uses)} of ${b.uses} left` : "", b.risk !== undefined ? `${Math.max(0, b.risk - spent.risk)} of ${b.risk} points left` : ""].filter(Boolean).join(", ");
   const out: { scope: string; left: string; horizon?: string; counts: string } = { scope, left, counts: b.counts === "all" ? "counts what you allow too" : "counts what rules allow" };

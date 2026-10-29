@@ -29,6 +29,8 @@ export interface NarrowInput {
   select?: string;
   /** What each standing policy has spent, so a spent budget asks instead of allowing. */
   usage?: Usage;
+  /** Each agent's groups, by agent id, for rules that name a group. */
+  groups?: Record<string, string[]>;
 }
 
 export type NarrowResult =
@@ -198,7 +200,8 @@ export function narrowGrant(input: NarrowInput): NarrowResult {
   if (res.length === 0) return { kind: "refuse", reason: "Nothing is left once the environments you excluded are removed.", beyond };
 
   // Policy: drop the targets it denies; the rest are decided together, for this agent, against what's been spent.
-  const ctx = { agent: base.aud, ...(input.usage ? { usage: input.usage } : {}) };
+  const groups = input.groups?.[base.aud];
+  const ctx = { agent: base.aud, ...(input.usage ? { usage: input.usage } : {}), ...(groups?.length ? { groups } : {}) };
   const verdictOn = (rs: string[]) => decideAll(input.policy, base.act, rs, input.now, ctx);
   const denied = res.filter((r) => verdictOn([r]).verdict === "deny");
   for (const r of denied) beyond.push({ field: "res", asked: r, why: verdictOn([r]).reason });
