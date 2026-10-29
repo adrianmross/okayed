@@ -181,18 +181,22 @@ packages/core        the platform-neutral service: ports (Store, Signer, Drafter
                      HTTP API on Request/Response, identity (OIDC, workload identity), connectors and credentials,
                      capability pack setup, approvers (passkeys, paired apps), drafters, the demo's tools, evals
 packages/connectors  GitHub (token or GitHub App), Cloudflare (Pages, DNS, just-in-time tokens), Slack
+packages/interop     other permission systems: an organization's policy by group, SCIM, OIDC and SAML groups,
+                     Cloudflare Access identity, OAuth scopes, rich authorization requests (RFC 9396), UCAN
 packages/design      okayed's design system: tokens, the latest shadcn components, AI Elements for chat, and
                      okayed's approval card, receipts, rule tiles and Shortcuts-style editor, also served as a
                      shadcn registry (docs/design-system.md)
 packages/client      a dependency-free client for agents: ask, wait, merge
 apps/worker          Cloudflare: OkayedAgent (Durable Object per user), OkayedChat (AIChatAgent), OkayedMcp
-                     (remote MCP over OAuth), the Workflow, Workers AI, Access, Queues, the API and the site
+                     (remote MCP over OAuth), OkayedDirectory (SCIM), the Workflow, Workers AI, Access, Queues,
+                     the API and the site
 apps/web             the demo (Chat, Rules, Activity, Settings), React on @okayed/design, and /r/ (the registry)
 apps/playground      at /playground: ask your rules, build one, see every component configuration, and watch words
                      narrow into a grant; the engine in the browser
 apps/node            the same API on Node: SQLite, in-process timers, no build step
 apps/mcp             MCP server so any MCP agent asks okayed before acting
-docs/                design notes, grant format, design system
+docs/                design notes, grant format, design system, Cloudflare architecture, other permission
+                     systems
 scripts/             smoke.mjs (API end to end), mcp-remote.mjs (OAuth and MCP), e2e-web.mjs (the demo in a browser)
 ```
 
@@ -314,6 +318,8 @@ Or add the `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `ISSUER_SECRET` r
 | Approve **other services' actions** | Var `CAPABILITY_PACKS` (e.g. `slack,email,cloudflare-dns,aws-s3`) or `CAPABILITY_PACKS_JSON` |
 | Post to **Slack** | Secret `SLACK_BOT_TOKEN`, var `SLACK_WORKSPACE`, and the `slack` pack |
 | Change **DNS** with zone-scoped tokens | Var `CF_DNS_ZONES` (`{"okayed.dev":"<zone id>"}`), with `CF_ACCOUNT_ID`, `CF_API_TOKEN` and the `cloudflare-dns` pack |
+| Set **organization limits** by group | Var `ORG_POLICY` (JSON, [docs/interop.md](docs/interop.md)); groups come from sign-in (OIDC claims, or Access) |
+| Provision people and groups over **SCIM** | Secret `SCIM_TOKEN`; point the IdP at `https://<your okayed>/scim/v2`; var `SCIM_SUBJECT` if the sign-in subject isn't in `externalId` |
 
 ### Use the components in your own app
 
@@ -331,22 +337,27 @@ The playground's Components view shows every configuration live, with its instal
 
 ## Cloudflare, end to end
 
+Each person's okayed is a Durable Object: one instance per person, worldwide, with its own transactional storage and
+one request at a time. That single writer is what makes "once means once", limits and Stop everything hold under
+concurrency, with no database or lock service to run. [docs/cloudflare.md](docs/cloudflare.md) explains it, with
+every binding and a request's path through them.
+
 | Cloudflare | What it does here | Where |
 |---|---|---|
 | Workers + static assets | One Worker: the API, the web app, the playground and the registry, on one origin | `apps/worker/src/index.ts`, `api.ts` |
-| Durable Objects (SQLite) | A person's okayed (policy, requests, grants, use counters, audit), their chat, and each MCP session | `agent.ts`, `chat.ts`, `mcp.ts` |
+| Durable Objects (SQLite) | A person's okayed (policy, requests, grants, use counters, audit), their chat, each MCP session, and the organization's directory | `agent.ts`, `chat.ts`, `mcp.ts`, `directory.ts` |
 | Workflows | Each grant's lifecycle: propose, await the person, issue, expire or revoke | `workflow.ts` |
 | Agents SDK | `Agent` with live state over WebSocket, `AIChatAgent` with tool approval, `McpAgent` for remote MCP | `agent.ts`, `chat.ts`, `mcp.ts` |
 | Workers AI | Llama 3.3 drafts and explains; Whisper hears voice okays | `adapters.ts`, `chat.ts`, `agent.ts` |
 | AI Gateway | Optional: every model call logged, cached and rate limited | `AI_GATEWAY` |
 | KV + Workers OAuth Provider | OAuth for remote MCP clients: registration, consent, tokens | `consent.ts`, `index.ts` |
-| Access | Optional: your Access identity is your okayed; no owner token | `access.ts` |
+| Access | Optional: your Access identity is your okayed; no owner token; its groups can set organization limits | `api.ts`, `core/src/identity.ts` |
 | Turnstile | Optional: a quiet human check on sign-up | `api.ts`, `welcome.tsx` |
 | Rate limiting | Sign-ups per address, requests per agent | `wrangler.jsonc`, `api.ts` |
 | Queues | Wakes paired approver apps, so a slow app never holds up a request | `notify.ts` |
 | Analytics Engine | One data point per request, issue and deploy | `agent.ts` (`metric`) |
 | R2 | Optional: an archive of every signed event | `agent.ts` (`archiveEvents`) |
-| API tokens | Real deploys: a Pages-only token minted per deploy, dead within ten minutes, deleted after use | `cloudflare.ts` |
+| API tokens | Real deploys: a Pages-only token minted per deploy, dead within ten minutes, deleted after use | `connectors/src/cloudflare.ts` |
 | Workers Logs | Observability for the Worker | `wrangler.jsonc` |
 
 ## Cloudflare assignment checklist
@@ -411,6 +422,16 @@ credential is either a stored secret or minted for that call alone:
 | The person | An owner token; or Cloudflare Access; or an ID token from any OIDC provider (Auth0, Okta, Google…) |
 | An agent | An okayed agent token; or OAuth through remote MCP; or a **workload identity** token from its platform (GitHub Actions, Kubernetes, a cloud) that you trust in Settings, so CI holds no secret |
 | The approval | A passkey (Face ID, Touch ID, a security key); or a paired approver app that signs with its own key |
+| The organization | Its policy by group, with groups from SCIM, an OIDC groups claim, Cloudflare Access or SAML: a layer above each person's rules that only narrows them, and removal stops everything |
+
+**Any permission vocabulary.** `@okayed/interop` maps the systems already in use onto okayed's actions, resources
+and principals: an organization's groups (SCIM, OIDC, SAML, Access) become limits above each person's rules; OAuth
+scopes become a limit on an agent, and a grant says which scopes its credential needs; agents can ask in RFC 9396's
+`authorization_details`, and a grant can be written back as them or as a UCAN delegation. Agents can be in groups too,
+so one rule covers `group:deployers`. [docs/interop.md](docs/interop.md) has the mapping, the setup and what's not
+done yet.
+
+![Rules, with the limits Acme set from its directory above the person's own](docs/img/org-limits.png)
 
 ## Where it fits
 
@@ -421,9 +442,11 @@ credential is either a stored secret or minted for that call alone:
 
 ## Limitations (v0)
 
-- Identity is a bearer owner token per user and minted agent tokens. Passkeys sign approvals, but don't yet sign
-  you in.
-- The demo's tools are simulated. The GitHub merge tool in `core/src/github.ts` is real and takes the same grants.
+- Without Access or an OIDC provider, identity is a bearer owner token per user and minted agent tokens. Passkeys
+  sign approvals, but don't yet sign you in.
+- The demo's tools are simulated. The connectors in `packages/connectors` are real and take the same grants.
+- SAML assertions aren't verified by okayed itself (put Access or a SAML library in front), and UCANs are mapped as
+  payloads, not signed envelopes.
 - One action per grant. There are no delegation chains, and events are not yet published to relays.
 - `POST /verify` with `consume: true` requires the grant event, not just its id. Anyone holding the event can spend
   its use, which is safe for the intended flow (agent → tool) but is not proof of who the caller is.

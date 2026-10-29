@@ -130,7 +130,7 @@ precise terms. Each pair names one thing:
 
 ## Provider-agnostic by design
 
-The core is platform-neutral in four ways:
+The core is platform-neutral in five ways:
 
 - **Runtime.** `packages/core` holds the service and the whole per-person HTTP API (`handleApi`) on the Fetch API's
   `Request` and `Response`, with hooks for what a platform adds (identity, tools, limits, metrics, extras). It uses
@@ -146,14 +146,18 @@ The core is platform-neutral in four ways:
 - **Identity.** People prove themselves with an owner token, Cloudflare Access or any OIDC provider's ID token
   (`personOf`); agents with an agent token, OAuth (remote MCP) or a workload identity token from their platform that
   the person trusts (`trustWorkload`, `agentForWorkload`), so CI holds no secret.
-
+- **Other permission systems.** Limits from outside the person (`setCeiling`) are layers above their rules that can
+  only narrow them. `@okayed/interop` fills them from an organization's policy by group, with groups from SCIM, OIDC
+  claims, Cloudflare Access or SAML, and from OAuth scopes. Removing someone from the directory stops their okayed.
+  Agents can be in groups (`group:<name>` in rules), and requests and grants translate to and from RFC 9396
+  `authorization_details` and UCAN delegations ([interop.md](interop.md)).
 
 Cloudflare comes first, but only `apps/worker` imports Cloudflare APIs. Everything else goes through ports defined
 in `packages/core`:
 
 | Port | What it needs | Cloudflare adapter | Elsewhere |
 |---|---|---|---|
-| `Store` | per-user key/value with a serializable `transaction` | Durable Object storage | Postgres row lock, SQLite, Redis `WATCH` |
+| `Store` | per-user key/value with a serializable `transaction` | Durable Object storage ([why](cloudflare.md)) | Postgres row lock, SQLite, Redis `WATCH` |
 | `Drafter` | text in, JSON proposal out | Workers AI (Llama 3.3) | `OpenAICompatibleDrafter` for any OpenAI-compatible endpoint; `HeuristicDrafter` offline |
 | `Lifecycle` | durable "wake me at t / when confirmed" | Workflows | Temporal, a cron + queue, in-process timers |
 | `Signer` | BIP-340 Schnorr over the event id | key from Worker secret | KMS, HSM, a hardware key |
