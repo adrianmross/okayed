@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    # The real Worker under wrangler dev, without Workers AI: Durable Objects, the Workflow, the Agents SDK, OAuth and
+    # remote MCP, Queues, R2 and the static site it serves, all simulated locally.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:site
+      - name: Start the Worker (it serves the web app too)
+        working-directory: apps/worker
+        run: |
+          echo "ISSUER_SECRET=$(openssl rand -hex 32)" > .dev.vars
+          nohup pnpm exec wrangler dev --env local --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://localhost:8787/api > /dev/null && break; sleep 1; done
+      - run: node scripts/smoke.mjs http://localhost:8787
+      - run: node scripts/mcp-remote.mjs http://localhost:8787
+      - name: The same API on Node
+        run: |
+          OKAYED_SECRET=$(openssl rand -hex 32) OKAYED_DB=:memory: CAPABILITY_PACKS=slack,email SCIM_TOKEN=local-scim-token PORT=8788 nohup node apps/node/src/main.ts > node.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8788/api > /dev/null && break; sleep 1; done
+          node scripts/smoke.mjs http://localhost:8788
+      - run: pnpm exec playwright install --with-deps chromium
+      # The demo in a browser: chat, rules, Face ID through a virtual authenticator, hold-and-slide, receipts.
+      - run: node scripts/e2e-web.mjs http://localhost:8787
+      - if: failure()
+        run: cat apps/worker/wrangler.log node.log
