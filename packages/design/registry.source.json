@@ -6,7 +6,7 @@
       "name": "okayed-theme",
       "type": "registry:theme",
       "title": "okayed theme",
-      "description": "Cool neutrals, one cobalt seal accent, semantic allow/ask/deny colours, Shortcuts-style action tiles, and the seal and rise animations.",
+      "description": "Cool neutrals, one cobalt seal accent, semantic allow/ask/deny colours, Shortcuts-style action tiles, and the seal, rise, tick and sheen animations.",
       "css": "src/styles/okayed.css"
     },
     {
@@ -66,6 +66,50 @@
       ]
     },
     {
+      "name": "swipe-decide",
+      "type": "registry:component",
+      "title": "Swipe to decide",
+      "description": "Every approval's one gesture: swipe right for the answer it names. Always and Deny are pills to hold (rest on a chip for how long, then slide up and swipe) or tap; without Always, Not now sits at the row's end. The gesture's rules are a pure, tested model.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "files": [
+        "src/okayed/swipe-model.ts",
+        "src/okayed/swipe-decide.tsx"
+      ]
+    },
+    {
+      "name": "done-mark",
+      "type": "registry:component",
+      "title": "Done mark",
+      "description": "A decision settling in: a disc whose tick draws itself, or a quiet cross, with the words beside it.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "okayed-theme"
+      ],
+      "files": [
+        "src/okayed/decided.tsx"
+      ]
+    },
+    {
+      "name": "money-card",
+      "type": "registry:component",
+      "title": "Money card",
+      "description": "A payment as a wallet card: the amount big, what it's for, how it's paid, and Swipe to pay with Not now. Decided, it folds to a small receipt.",
+      "dependencies": [
+        "lucide-react"
+      ],
+      "registryDependencies": [
+        "swipe-decide",
+        "done-mark"
+      ],
+      "files": [
+        "src/okayed/money.tsx"
+      ]
+    },
+    {
       "name": "approval-actions",
       "type": "registry:component",
       "title": "Approval actions",
@@ -87,16 +131,19 @@
       "name": "approval-card",
       "type": "registry:component",
       "title": "Approval card",
-      "description": "Who wants to do exactly what, within which scope, and the decision, in any layout and flow from approval-actions, or your own.",
+      "description": "Where it happens, the question in plain words (who, the verb, the exact targets), the agent's reason, details a tap away, and one decision: swipe to decide by default, or any layout and flow from approval-actions, or your own. A payment is a money card.",
       "dependencies": [
         "lucide-react"
       ],
       "registryDependencies": [
-        "badge",
         "collapsible",
+        "popover",
         "okayed-primitives",
         "okayed-engine",
-        "approval-actions"
+        "approval-actions",
+        "swipe-decide",
+        "money-card",
+        "done-mark"
       ],
       "files": [
         "src/okayed/approval.tsx"
@@ -170,8 +217,8 @@
     {
       "name": "approval-card-swipe",
       "type": "registry:block",
-      "title": "Approval card: slide to allow",
-      "description": "The main decision is a slide, so a stray tap can't okay anything.",
+      "title": "Approval card: swipe, and hold for how long",
+      "description": "Swipe to allow. Hold Always, rest on 1d, 30d or ∞, then slide up and swipe to make a rule that long; hold Deny to block the same way.",
       "registryDependencies": [
         "approval-card"
       ],
@@ -192,6 +239,18 @@
       ]
     },
     {
+      "name": "approval-card-pay",
+      "type": "registry:block",
+      "title": "Approval card: a payment",
+      "description": "A purchase asks with a money card: the amount, what it's for, Swipe to pay, Not now.",
+      "registryDependencies": [
+        "approval-card"
+      ],
+      "files": [
+        "src/okayed/examples/approval-card-pay.tsx"
+      ]
+    },
+    {
       "name": "okayed",
       "type": "registry:block",
       "title": "Everything okayed",
@@ -202,6 +261,9 @@
         "okayed-primitives",
         "slide-to-confirm",
         "hold-slide",
+        "swipe-decide",
+        "done-mark",
+        "money-card",
         "approval-actions",
         "approval-card",
         "receipt-card",
