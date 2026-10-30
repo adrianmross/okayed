@@ -1,0 +1,51 @@
+name: deploy
+
+# Manual. One Worker serves the API, the web app, the playground and the shadcn registry, on free-plan features.
+# Needs repository secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and ISSUER_SECRET. Optional:
+# - secret GITHUB_DEMO_TOKEN: the GitHub merge tool
+# - secret TURNSTILE_SECRET and variable TURNSTILE_SITE_KEY: Turnstile on sign-up
+# - secret CF_DEPLOY_TOKEN and variable CF_PAGES_SITES: real deploys with just-in-time API tokens
+# - variable AI_GATEWAY: an AI Gateway id for every Workers AI call
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the site (web app, playground, registry)
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+        run: pnpm build:site
+      - name: Deploy the Worker
+        working-directory: apps/worker
+        env:
+          ISSUER_SECRET: ${{ secrets.ISSUER_SECRET }}
+          GITHUB_DEMO_TOKEN: ${{ secrets.GITHUB_DEMO_TOKEN }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
+          CF_DEPLOY_TOKEN: ${{ secrets.CF_DEPLOY_TOKEN }}
+          CF_PAGES_SITES: ${{ vars.CF_PAGES_SITES }}
+          AI_GATEWAY: ${{ vars.AI_GATEWAY }}
+        run: |
+          pnpm exec wrangler queues create okayed-approver-wake || true
+          vars=()
+          [ -n "$AI_GATEWAY" ] && vars+=(--var "AI_GATEWAY:$AI_GATEWAY")
+          [ -n "$CF_PAGES_SITES" ] && vars+=(--var "CF_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID" --var "CF_PAGES_SITES:$CF_PAGES_SITES")
+          pnpm exec wrangler deploy --env="" "${vars[@]}"
+          printf %s "$ISSUER_SECRET" | pnpm exec wrangler secret put ISSUER_SECRET --env=""
+          if [ -n "$GITHUB_DEMO_TOKEN" ]; then printf %s "$GITHUB_DEMO_TOKEN" | pnpm exec wrangler secret put GITHUB_TOKEN --env=""; fi
+          if [ -n "$TURNSTILE_SECRET" ]; then printf %s "$TURNSTILE_SECRET" | pnpm exec wrangler secret put TURNSTILE_SECRET --env=""; fi
+          if [ -n "$CF_DEPLOY_TOKEN" ]; then printf %s "$CF_DEPLOY_TOKEN" | pnpm exec wrangler secret put CF_API_TOKEN --env=""; fi
