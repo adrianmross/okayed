@@ -1,6 +1,4 @@
-import { ActionTile } from "@okayed/design/okayed";
-import { Button } from "@okayed/design/ui/button";
-import { Spinner } from "@okayed/design/ui/spinner";
+import { ActionTile, SwipeDecide } from "@okayed/design/okayed";
 import { PlugIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -37,7 +35,7 @@ export function Connect({ session }: { session: Session }) {
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-5 py-12">
       <div className="flex items-center gap-2 font-semibold text-xl"><Logo className="size-8" />okayed</div>
-      <div className="animate-rise space-y-5 rounded-2xl border bg-card p-5 shadow-sm">
+      <div className="animate-rise space-y-5 rounded-[26px] border bg-card p-5 shadow-sm">
         <div className="flex items-center gap-3">
           <ActionTile tone="policy" icon={<PlugIcon />} size="lg" />
           <h1 className="font-semibold text-xl leading-snug"><span className="text-primary">{client}</span> wants to connect to your okayed</h1>
@@ -47,10 +45,7 @@ export function Connect({ session }: { session: Session }) {
           <li>It can't allow anything itself, and it never sees a credential.</li>
           <li>Disconnect it any time in Settings.</li>
         </ul>
-        <div className="space-y-2">
-          <Button size="lg" className="h-12 w-full rounded-xl text-[15px]" disabled={!!busy} onClick={() => decide(true)}>{busy === "allow" && <Spinner />}Allow</Button>
-          <Button variant="ghost" className="w-full text-muted-foreground" disabled={!!busy} onClick={() => decide(false)}>{busy === "deny" && <Spinner />}Don't allow</Button>
-        </div>
+        <SwipeDecide title={busy === "allow" ? "Connecting…" : busy === "deny" ? "Saying no…" : "Swipe to connect"} label={`Connect ${client}`} disabled={!!busy} onAllow={() => decide(true)} back={{ word: "Not now", onBack: () => decide(false) }} />
         {back && <p className="text-center text-muted-foreground text-xs">Then you'll go back to {back}.</p>}
       </div>
     </main>

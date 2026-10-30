@@ -141,24 +141,28 @@ function ApprovalButtons() {
   const [log, setLog] = useState("Try it: nothing here is sent anywhere.");
   const days = (t?: number | null) => (t === undefined ? "opens the editor" : t === null ? "with no end" : t >= 86400 ? `for ${t / 86400} day${t === 86400 ? "" : "s"}` : `for ${t / 3600} hour${t === 3600 ? "" : "s"}`);
   return (
-    <Section title="Approval buttons" description="How cards ask you to decide on this device. Hold and slide: press Always allow… or Block…, slide up to choose how long, then across to confirm.">
+    <Section
+      title="Approvals"
+      description="How cards ask you to decide on this device. Swipe: swipe right to allow. Hold Always, rest on how long, then slide up and swipe; hold Deny to swipe left, resting on how long to block requests like it."
+    >
       <div className="grid gap-4 md:grid-cols-[1fr_minmax(0,28rem)]">
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <div className="font-medium text-sm">Layout</div>
-            <ToggleGroup type="single" variant="outline" value={style.layout} onValueChange={(v) => v && setStyle({ ...style, layout: v as ApprovalLayout })}>
-              <ToggleGroupItem value="stack">Stacked</ToggleGroupItem>
-              <ToggleGroupItem value="row">In a row</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div className="space-y-1.5">
             <div className="font-medium text-sm">To decide</div>
-            <ToggleGroup type="single" variant="outline" value={style.flow} onValueChange={(v) => v && setStyle({ ...style, flow: v as ApprovalFlow })}>
-              <ToggleGroupItem value="tap">Tap</ToggleGroupItem>
+            <ToggleGroup type="single" variant="outline" value={style.flow === "swipe" ? "swipe" : "tap"} onValueChange={(v) => v && setStyle({ ...style, flow: v as ApprovalFlow })}>
               <ToggleGroupItem value="swipe">Swipe</ToggleGroupItem>
-              <ToggleGroupItem value="hold">Hold and slide</ToggleGroupItem>
+              <ToggleGroupItem value="tap">Buttons</ToggleGroupItem>
             </ToggleGroup>
           </div>
+          {style.flow !== "swipe" && (
+            <div className="space-y-1.5">
+              <div className="font-medium text-sm">Buttons</div>
+              <ToggleGroup type="single" variant="outline" value={style.layout} onValueChange={(v) => v && setStyle({ ...style, layout: v as ApprovalLayout })}>
+                <ToggleGroupItem value="stack">Stacked</ToggleGroupItem>
+                <ToggleGroupItem value="row">In a row</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          )}
           <p className="text-muted-foreground text-sm" aria-live="polite">{log}</p>
         </div>
         <ApprovalCard
@@ -169,13 +173,13 @@ function ApprovalButtons() {
           ttl={1800}
           when={[]}
           risk="high"
-          why="ship the latest build to production"
+          why="I want to ship the latest build to production."
           state="pending"
           passkey="ready"
           layout={style.layout}
           flow={style.flow}
-          onApprove={() => setLog("Allow once.")}
-          onDeny={() => setLog("Don't allow.")}
+          onApprove={() => setLog("Allowed once.")}
+          onDeny={() => setLog("Denied.")}
           onAlwaysAllow={(t) => setLog(`Always allow: ${days(t)}.`)}
           onBlock={(t) => setLog(`Block: ${days(t)}.`)}
         />
