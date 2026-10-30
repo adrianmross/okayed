@@ -50,7 +50,8 @@ describe("the demo assistant", () => {
     const { svc, backend } = setup();
     await svc.claim();
     const out = await turn(backend, [{ role: "user", content: "merge PR #182 in okayed" }]);
-    expect(out.text).toMatch(/^Done: Merged PR #182 into adrianmross\/okayed at [0-9a-f]{7}\. This was simulated, allowed by your rules \(posture:merge\)/);
+    // One short line: the chat itself shows how it was allowed, and its receipt.
+    expect(out.text).toMatch(/^Merged PR #182 into adrianmross\/okayed at [0-9a-f]{7}\.$/);
     const snap = await svc.snapshot();
     expect(snap.grants[0]).toMatchObject({ status: "used", used: 1 });
     expect(snap.requests[0]!.ref).toMatch(/^call_/);
@@ -70,7 +71,7 @@ describe("the demo assistant", () => {
     await settle();
     const approvalId = (ask as { approvalId: string }).approvalId;
     const second = await turn(backend, [...first.messages, { role: "tool", content: [{ type: "tool-approval-response", approvalId, approved: true }] }]);
-    expect(second.text).toMatch(/^Done: Deployed openmeadow.org to production/);
+    expect(second.text).toBe("Deployed openmeadow.org to production.");
   });
 
   it("is refused outright when a policy says never", async () => {
