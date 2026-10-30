@@ -20,33 +20,37 @@ grant before it acts.
 Chat with an assistant that can merge pull requests, deploy sites, comment and buy things. Its tools are simulated:
 nothing real happens. Every tool call still goes through okayed, and the permissions it signs are real.
 
-- If your rules allow the call, it goes ahead with a one-time permission, and a receipt appears in the chat.
-- If they ask you, an approval card appears under the tool call: the plain sentence, the exact scope, the risk, and
-  what was left out of the draft. **Allow once** signs a WebAuthn assertion (Face ID, Touch ID) over that exact
-  request, and the assertion travels with the permission. **Always allow…** opens the narrowest rule that covers
-  requests like this one, and allows this one with the same Face ID.
+- If your rules allow the call, it goes ahead with a one-time permission. The chat shows it as one line, with how it
+  was allowed and its receipt a tap away.
+- If they ask you, an approval card appears under that line: the service, the question in plain words ("Allow
+  Assistant to deploy openmeadow.org to production?"), the agent's reason, and the details a tap away. **Swipe to
+  allow** signs a WebAuthn assertion (Face ID, Touch ID) over that exact request, and the assertion travels with the
+  permission. A purchase asks with a money card instead: the amount big, what it's for, **Swipe to pay** or Not now.
 - If a rule blocks it, the assistant is refused and says so.
 
-Approval buttons come in two layouts (stacked, or in a row) and three ways to decide: tap, swipe to allow, or
-**hold and slide**. Press Always allow… or Block…, slide up to choose how long the rule lasts (an hour up to always),
-then across to confirm. Pick yours in Settings. You can also **say** what you want: the mic hears you through
-Whisper on Workers AI, and the words land in the box for you to read before sending.
+Nothing is decided by a tap. **Hold Always**, rest on how long (a day, 30 days, or until you remove it), slide up into
+the track and swipe: that makes the narrowest rule that covers requests like this one and allows this one with the
+same Face ID. **Hold Deny** to swipe left, resting on how long on the way to block requests like it. Tap Deny and it
+waits for a left swipe; tap Always and its choices replace the pills. Prefer buttons? Pick them in Settings, stacked
+or in a row. You can also **say** what you want: the mic hears you through Whisper on Workers AI, and the words land
+in the box for you to read before sending.
 
-Each conversation has three views: **Chat**, **Receipts** and **Transcript** (every tool input and output, okayed
-request and grant, as data). **Rules** is a library you build like Siri Shortcuts. **Activity** has what's waiting,
-the permissions agents hold right now (take any of them back), and a history of signed receipts.
+Each conversation has three views: **Chat** (one line per action and the replies), **Receipts**, and **Transcript**
+(every tool input and output, okayed request and grant, as data). **Rules** is a library you build like Siri
+Shortcuts. **Activity** has what's waiting, the permissions agents hold right now (take any of them back), and a
+history of signed receipts.
 
-| The assistant asks; you allow it with Face ID | Then it carries on, with receipts |
+| The assistant asks; you swipe, with Face ID | Hold Always: rest on how long, then swipe |
 |---|---|
-| ![An approval card under the assistant's deploy tool call](docs/img/demo-approval.png) | ![Receipts for a merge your rules allowed and a deploy you allowed with Face ID](docs/img/demo-chat.png) |
+| ![An approval card under the assistant's deploy: the question, the reason, Swipe to allow, Always and Deny](docs/img/demo-approval.png) | ![Always held, with 1d, 30d and ∞ chips over the pills and ∞ picked](docs/img/demo-hold.png) |
 
-| “Always allow…” opens the narrowest rule | Your rules, on a phone |
+| A purchase is a money card | The chat: one line per action |
+|---|---|
+| ![A money card for $12.00 with Swipe to pay and Not now](docs/img/demo-money.png) | ![A merge your rules allowed and a deploy you allowed with Face ID, each one line with its receipt](docs/img/demo-chat.png) |
+
+| Make a rule… opens the narrowest rule | Your rules, on a phone |
 |---|---|
 | ![The rule editor, prefilled from a production deploy request](docs/img/demo-always-allow.png) | ![Rule tiles on a phone](docs/img/demo-rules-mobile.png) |
-
-| Hold and slide: up for how long, across to confirm | An MCP client asks to connect |
-|---|---|
-| ![Always allow… held, with the duration ladder on 1 week](docs/img/components-hold.png) | ![The Connect screen for a remote MCP client](docs/img/connect.png) |
 
 **Words.** The app speaks in everyday words. The API, the grant format and the docs keep the IAM ones:
 

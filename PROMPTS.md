@@ -265,3 +265,20 @@ request at a time) and why every guarantee here rests on that single writer per 
 | `feat: …` | On the Worker, the organization's directory is its own Durable Object at `/scim/v2`, reaching into each person's object to set limits or stop everything; limits from sign-in groups without SCIM; the same on Node, tested against a real local OIDC issuer. |
 | `feat(web): …` | Rules shows an organization's limits read-only, above your own. |
 | `docs: …` | `docs/cloudflare.md` (Durable Objects and every binding), `docs/interop.md`; the private architecture page and 3-D models were refreshed, with a Cloudflare scene. |
+
+## 16 — A card closer to the one we had, and a quieter chat
+
+One project name in this prompt is redacted. It came with a screenshot of an approval card.
+
+```text
+Also it feels in chat that it’s not streamlined enough, still too many cards, etc when that probably should go to transcript or receipt. Also this is how we showed card in [redacted] . I think closer to this looks better. Especially for the hold wnd choose duration. Look at the code on how it’s done. Same for all the swipe actions and payments too. Make the best of all or allow it to be adapted slightly
+```
+
+### What came out of prompt 16
+
+| Commit | What |
+|---|---|
+| `feat(design): swipe to decide …` | `SwipeDecide`: swipe right for the answer it names; hold Always, rest on a span (1d, 30d, ∞), slide up and swipe; hold Deny to swipe left, resting on a span to block requests like it; taps only arm. One row with Not now for payments and connecting. The rules are a pure, tested model. A money card and a decided mark. |
+| `feat(design): the approval card asks in plain words …` | The card leads with the service, then "Allow Assistant to deploy openmeadow.org to production?", the reason, Details; payments are money cards. Buttons stay available as flows. |
+| `feat(core): …`, `feat(web): …` | One line per action in the chat, with its receipt a tap away and the raw call in Transcript; one-line replies; the agent's reasons in its own words; swipe to connect; Swipe as the default in Settings. |
+| `feat(playground): …`, `test: …`, `docs: …` | Every configuration live, including payments; the browser test swipes and holds; new screenshots. |

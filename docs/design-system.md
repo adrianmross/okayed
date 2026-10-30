@@ -83,53 +83,57 @@ An inline value. Without `onClick` it's static; with `interactive` or `onClick` 
 
 From top to bottom:
 
-1. Who: the agent's avatar, "wants to", and a risk badge.
-2. What: a large action tile and the sentence, with targets as tokens.
-3. Why: the agent's reason, quoted.
-4. Scope chips: the commit, the use count, the time, the conditions.
-5. "Left out of this request": a collapsible list of what was cut from the model's draft.
-6. One decision: a full-width **Allow once** with the Face ID glyph; **Always allow…**, which opens the rule editor
-   with the narrowest rule that covers requests like this one; a quiet **Don't allow**; and a link to allow without
-   Face ID. `layout`, `flow` and `actions` change how the decision looks and how it's made (below).
+1. Where: the service's tile and name ("Sites", "GitHub", a pack's title), "High risk" when it is, and ⓘ, which says
+   how the answer is signed and what Always covers.
+2. The question, in plain words: "Allow **Assistant** to **deploy** openmeadow.org to production?" The agent is in
+   one tone, the verb in another, and each exact target is underlined (`ApprovalQuestion`).
+3. The agent's reason, in grey, because it's their claim.
+4. **Details**, a tap away: the scope chips (the commit, the use count, the time, the conditions), what was left out
+   of the model's draft, Allow without Face ID, and Make a rule… (the rule editor, prefilled).
+5. One decision: by default, swipe to decide (below). `flow`, `layout` and `actions` change how it looks and how it's
+   made.
+6. Decided, it folds to a line: a tick that draws itself and what happened (`Decided`, `DoneMark`).
 
-Once allowed, the seal presses down.
+A payment (`spend.money`) is a **money card** instead (`MoneyCard`): a deep green wallet card, the same in both
+themes, with the amount big, what it's for, how it's paid, and **Swipe to pay** with **Not now** at the row's end. A
+light sweeps across it once as it arrives. Decided, it folds to a small receipt that a tap opens again.
 
-### Approval actions — `ApprovalActions`, `SlideToConfirm`, `HoldSlide`
+### Swipe to decide — `SwipeDecide`
 
-The decision area comes in configurations, so each implementation picks the one that fits and can build its own on
-top. `ApprovalCard` takes the same props and passes them through, or takes `actions` to replace the area entirely.
+Every approval's one gesture. The answer it names is a swipe right ("Swipe to allow", "Swipe to pay", "Swipe to
+connect"). The other answer is never a plain swipe or a tap, so neither is ever given by accident.
 
-| | `flow="tap"` (default) | `flow="swipe"` | `flow="hold"` |
-|---|---|---|---|
-| **Allow once** | a button | slide to allow | a button |
-| **Always allow…**, **Block…** | buttons that open the rule editor | buttons that open the rule editor | tap to open the editor, or hold and slide to make the rule at once |
-| **Don't allow** | a button | a button | a button |
+| | On a card with Always | One row (no Always) |
+|---|---|---|
+| **Allow** | swipe right past 85% of the track | swipe right the full length; the track grows over Not now as you go |
+| **Always**, for how long | hold Always: its spans pop up as chips (1d, 30d, ∞); rest on one, slide up into the track and swipe right. Or tap Always and pick from the spans that replace the pills | — |
+| **Deny** | hold Deny: the track turns red, knob at the end; slide into it and swipe left. Rest on a chip on the way to block requests like this for that long. Or tap Deny (it reads Cancel) and swipe left | hold Not now and slide left the full length, or tap it and swipe left |
 
-`layout="stack"` (default) puts the main decision full width with the others under it; `layout="row"` puts them in
-one row: Don't allow · Block… · Always allow… · Allow once, wrapping on narrow cards.
-
-**Hold and slide.** Press and hold **Always allow…** (or **Block…**). A ladder of durations appears above it: 1 hour,
-1 day, 1 week, 30 days, Always. Slide up to climb it, one rung per 28 px, then slide across: the track fills, and
-reaching the end makes the rule. Let go early and nothing happens. Once the swipe is under way the rung stays put, so
-moving sideways can't change it. A quick tap is still a tap. With the keyboard, the arrows climb the ladder, Enter
-confirms and Escape cancels. The step logic is a pure function, `readHoldSlide`, so other implementations can reuse
-it with their own visuals.
-
-**Slide to confirm.** Drag the knob all the way across; let go early and it springs back. Enter or Space confirms,
-and the arrows move the knob a quarter at a time. Motion is off under `prefers-reduced-motion`.
-
-The callbacks say what happened:
+A chip is picked only when the finger rests on it (180 ms); passing over one picks nothing, and the pick stays until
+another is rested on. Lifted anywhere short of a swipe, nothing happens. A tapped Deny goes back to Allow after a few
+seconds with nothing done. The track always says what a swipe will do: "Pause on a choice" while nothing is picked,
+then "Swipe to allow for 30 days". With the keyboard, Enter on the track answers what it says, and the pills and
+spans are buttons. `light` puts it on a dark card. The rules are a pure, tested model (`swipe-model.ts`: `letGo`,
+`chipsOf`, `holdMove`, `holdCommits`…) so other renderers can reuse them.
 
 | Callback | Means |
 |---|---|
-| `onApprove()` | Allow this one request. |
+| `onApprove()` | Allow this one request (Face ID follows). |
 | `onApprovePlain()` | Allow it without Face ID. |
-| `onDeny()` | Don't allow it. |
-| `onAlwaysAllow()` | Tapped: open the rule editor. |
-| `onAlwaysAllow(seconds)` / `onAlwaysAllow(null)` | Held and slid: allow requests like this one for that long, or with no end. |
-| `onBlock()`, `onBlock(seconds)`, `onBlock(null)` | The same, for a rule that blocks them. |
+| `onDeny()` | Deny it. |
+| `onAlwaysAllow(seconds)` / `onAlwaysAllow(null)` | Always, for that long or until removed: a rule, and this one allowed. |
+| `onAlwaysAllow()` | Make a rule…: open the rule editor. |
+| `onBlock(seconds)` / `onBlock(null)` | Held Deny, resting on a span: block requests like this for that long. |
 
-`durations` replaces the ladder: any list of `{ label, seconds }`, where `seconds: null` means no end.
+`alwaysSpans` and `blockSpans` replace the chips: any list of `{ id, words, short?, icon?, says?, seconds }`.
+
+### Buttons instead — `ApprovalActions`, `SlideToConfirm`, `HoldSlide`
+
+For implementations that want buttons, `flow="tap"` or `flow="hold"` puts the classic decision area on the card:
+**Allow once**, **Always allow…**, **Block…** and **Don't allow**, stacked (`layout="stack"`) or in one row
+(`layout="row"`). `flow="hold"` makes Always allow… and Block… hold-and-slide buttons: hold, slide up a ladder of
+durations (1 hour to always, `durations` to change it), then across. `SlideToConfirm` and `HoldSlide` are there on
+their own too, and `actions` replaces the decision area entirely.
 
 ### Receipt — `ReceiptCard`
 
@@ -193,8 +197,8 @@ The approval card and the receipt render directly under the tool call they belon
 
 - Every interactive token, tile and step is a real `button` with a visible focus ring (`--ring`).
 - Decision colours always come with words ("Allowed", "Asks you"); colour is never the only signal.
-- Every gesture has a keyboard path (arrows, Enter, Escape) and a screen-reader hint, and a hold-and-slide is still a
-  plain button to a tap.
+- Every gesture has a keyboard path (Enter, arrows, Escape) and a screen-reader name that says what it will do; no
+  answer is ever a single tap.
 - Both themes are designed, and the theme follows the system (`followSystemTheme`).
 - The chat is a `role="log"` region; toasts are announced.
 
@@ -215,7 +219,7 @@ Or add the namespace to `components.json` and install by name:
 ```
 
 ```bash
-npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, actions, approval card, receipt, rule tile, rule editor
+npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, swipe to decide, money card, approval card, receipt, rules
 ```
 
 | Item | What |
@@ -223,10 +227,11 @@ npx shadcn add @okayed/okayed      # everything: theme, engine, primitives, acti
 | `okayed-theme` | The tokens, fonts, tile gradients and animations, merged into your CSS. |
 | `okayed-engine` | The policy engine, pure TypeScript. |
 | `okayed-primitives` | Action tiles, avatars, tokens, the seal, verdict pills, steps. |
-| `slide-to-confirm`, `hold-slide` | The two gestures on their own. |
-| `approval-actions` | The decision area in every layout and flow. |
+| `swipe-decide` | Swipe to decide, and its gesture model. |
+| `money-card`, `done-mark` | The payment card, and the decided mark. |
+| `slide-to-confirm`, `hold-slide`, `approval-actions` | The button flows and their gestures. |
 | `approval-card`, `receipt-card`, `rule-tile`, `rule-editor` | The components, each with the shadcn pieces it needs. |
-| `approval-card-row`, `approval-card-swipe`, `approval-card-hold` | Examples of each configuration, in `components/okayed/examples/`, to start from. |
+| `approval-card-swipe`, `approval-card-pay`, `approval-card-row`, `approval-card-hold` | Examples of each configuration, in `components/okayed/examples/`, to start from. |
 
 The playground's **Components** view shows every configuration live, with the calls each decision makes and the
 command that installs it.
