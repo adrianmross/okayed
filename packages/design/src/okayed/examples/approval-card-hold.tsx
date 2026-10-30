@@ -17,6 +17,7 @@ export function ApprovalCardHold() {
     <div className="space-y-2">
       <ApprovalCard
         flow="hold"
+        layout="stack"
         agent="agent:assistant"
         act="github.pr.merge"
         res={[PR]}

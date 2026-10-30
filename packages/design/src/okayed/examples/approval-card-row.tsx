@@ -8,6 +8,7 @@ export function ApprovalCardRow() {
   const [state, setState] = useState<ApprovalState>("pending");
   return (
     <ApprovalCard
+      flow="tap"
       layout="row"
       agent="agent:assistant"
       act="github.pr.merge"
