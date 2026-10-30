@@ -7,13 +7,15 @@ export interface ApprovalStyle {
   flow: ApprovalFlow;
 }
 
-const KEY = "okayed.approvalStyle.v0";
-const DEFAULT: ApprovalStyle = { layout: "stack", flow: "tap" };
+const KEY = "okayed.approvalStyle.v1";
+const DEFAULT: ApprovalStyle = { layout: "stack", flow: "swipe" };
 const listeners = new Set<(s: ApprovalStyle) => void>();
 
 function read(): ApprovalStyle {
   try {
-    return { ...DEFAULT, ...(JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<ApprovalStyle> | null) };
+    const s = { ...DEFAULT, ...(JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<ApprovalStyle> | null) };
+    // Holding to choose how long is part of swiping now.
+    return s.flow === "hold" ? { ...s, flow: "swipe" } : s;
   } catch {
     return DEFAULT;
   }

@@ -3,15 +3,16 @@ import type { Card, RequestRecord } from "@okayed/core";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@okayed/design/ai/conversation";
 import { Message, MessageContent, MessageResponse } from "@okayed/design/ai/message";
 import { Shimmer } from "@okayed/design/ai/shimmer";
-import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, type ToolPart } from "@okayed/design/ai/tool";
-import { ActionTile, ApprovalCard, ReceiptCard, Step, Token, type ApprovalState } from "@okayed/design/okayed";
+import type { ToolPart } from "@okayed/design/ai/tool";
+import { ActionTile, ApprovalCard, Decided, ReceiptCard, Step, SwipeDecide, Token, type ApprovalState } from "@okayed/design/okayed";
+import { cn } from "@okayed/design/lib/utils";
 import { Button } from "@okayed/design/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@okayed/design/ui/input-group";
 import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { describeRule } from "@okayed/engine";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useAgent } from "agents/react";
-import { ArrowUpIcon, MicIcon, ScanFaceIcon, SquareIcon, SquarePenIcon } from "lucide-react";
+import { ArrowUpIcon, CheckIcon, ChevronRightIcon, MicIcon, SquareIcon, SquarePenIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useRuleFromCard } from "../components/always-allow";
@@ -60,7 +61,7 @@ export function ChatView() {
       <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2.5 md:px-6">
         <div className="flex items-center gap-2">
           <ActionTile tone="policy" icon={<span className="font-semibold text-sm">A</span>} size="sm" />
-          <div className="leading-tight">
+          <div className="hidden leading-tight sm:block">
             <div className="font-semibold">Assistant</div>
             <div className="hidden text-muted-foreground text-xs sm:block">{busy ? "working…" : "every action goes through okayed"}</div>
           </div>
@@ -258,7 +259,16 @@ function stateOf(card: Card | undefined): ApprovalState {
   }
 }
 
-/** One tool call: the collapsible call itself, then whatever it needs from you, then its receipt. */
+/** How a permission was okayed, in a few words. */
+function howOf(method: string | undefined): string {
+  return method === "webauthn" ? "with Face ID" : method === "policy" ? "by your rules" : method === "approver" ? "on your phone" : "by you";
+}
+
+/**
+ * One tool call, as one line: what the assistant is doing and where it stands. While it needs you, the approval card
+ * sits under the line; once decided it folds into the line. The receipt opens from the line, and the raw call is in
+ * Transcript, so the conversation stays a conversation.
+ */
 function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   const okayed = useOkayed();
   const name = getToolName(part);
@@ -269,8 +279,10 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   const output = (part.state === "output-available" ? part.output : undefined) as { done?: boolean; grant?: string; summary?: string; card?: string; reason?: string } | undefined;
   const approval = "approval" in part ? (part.approval as { id: string; approved?: boolean; reason?: string } | undefined) : undefined;
   const [approving, setApproving] = useState(false);
+  const [open, setOpen] = useState(false);
   const { alwaysAllow, block, editor } = useRuleFromCard();
   const [style] = useApprovalStyle();
+  const grant = okayed.grant(output?.grant ?? req?.grantId);
 
   // Once okayed has issued the permission, tell the chat it was approved so the assistant carries on.
   const respondedFor = useRef<string | null>(null);
@@ -292,27 +304,40 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
     if (!ok) setApproving(false);
   };
 
+  const waiting = part.state === "approval-requested" && !!card?.draft;
+  const done = part.state === "output-available" && output?.done === true;
+  const status =
+    part.state === "input-streaming" || part.state === "input-available" || part.state === "approval-responded" ? (
+      <Shimmer className="text-muted-foreground">working…</Shimmer>
+    ) : part.state === "approval-requested" ? (
+      <span className="text-[color-mix(in_oklch,var(--ask)_70%,var(--foreground))]">needs you</span>
+    ) : done ? (
+      <span className="text-muted-foreground">{grant ? howOf(grant.grant.assurance.method) : "done"}</span>
+    ) : part.state === "output-denied" ? (
+      <span className="text-muted-foreground">not allowed{approval?.reason ? `: ${approval.reason.replace(/\.$/, "")}` : ""}</span>
+    ) : part.state === "output-available" && output?.done === false ? (
+      <span className="text-muted-foreground">didn't run{output.reason ? `: ${output.reason}` : ""}</span>
+    ) : part.state === "output-error" ? (
+      <span className="text-deny">failed</span>
+    ) : null;
+
   return (
     <div className="flex w-full flex-col gap-3">
-      <Tool>
-        <ToolHeader
-          title={meta.title(input)}
-          icon={<ActionTile act={meta.act} size="sm" />}
-          state={part.state}
-        />
-        <ToolContent>
-          <ToolInput input={part.input} />
-          {req && (
-            <p className="text-muted-foreground text-xs">
-              okayed request <span className="font-mono">{req.request.id}</span> · {req.status}
-              {approval?.reason ? ` · ${approval.reason}` : ""}
-            </p>
-          )}
-          <ToolOutput output={part.state === "output-available" ? part.output : undefined} errorText={part.state === "output-error" ? part.errorText : undefined} />
-        </ToolContent>
-      </Tool>
+      <button
+        type="button"
+        onClick={() => grant && setOpen((v) => !v)}
+        aria-expanded={grant ? open : undefined}
+        className={cn("flex w-full items-center gap-2.5 rounded-xl text-left text-sm", grant && "-mx-2 px-2 py-1 hover:bg-muted/60")}
+        disabled={!grant}
+      >
+        <ActionTile act={meta.act} size="sm" />
+        <span className="min-w-0 truncate font-medium">{meta.title(input)}</span>
+        {done ? <CheckIcon className="size-4 shrink-0 text-allow" /> : part.state === "output-denied" || (part.state === "output-available" && !output?.done && name !== "propose_policy") ? <XIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
+        <span className="shrink-0 whitespace-nowrap">{status}</span>
+        {grant && <span className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground text-xs">Receipt<ChevronRightIcon className={cn("size-3.5 motion-safe:transition-transform", open && "rotate-90")} /></span>}
+      </button>
 
-      {part.state === "approval-requested" && card?.draft && (
+      {waiting && card?.draft && (
         <ApprovalCard
           agent={card.draft.aud}
           act={card.draft.act}
@@ -323,6 +348,8 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
           risk={card.draft.risk}
           why={req?.request.why}
           cuts={card.beyond}
+          what={name === "buy" ? String(input.item ?? "") : undefined}
+          method={name === "buy" ? "Demo card ···· 4242" : undefined}
           state={approving && stateOf(card) === "pending" ? "approving" : stateOf(card)}
           passkey={passkeysSupported() ? (okayed.snap?.passkeys.length ? "ready" : "setup") : "unsupported"}
           onApprove={() => approve()}
@@ -338,10 +365,7 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
 
       {part.state === "output-available" && name === "propose_policy" && output?.card && <RuleProposal cardId={output.card} />}
 
-      {part.state === "output-available" && output?.done && output.grant && <ChatReceipt grantId={output.grant} req={req} title={output.summary ?? meta.title(input)} act={meta.act} />}
-
-      {part.state === "output-available" && output?.done === false && <p className="text-muted-foreground text-sm">Didn't run: {output.reason}.</p>}
-      {part.state === "output-denied" && <p className="text-muted-foreground text-sm">Not allowed{approval?.reason ? `: ${approval.reason}` : ""}.</p>}
+      {open && grant && <ChatReceipt grantId={grant.grant.id} req={req} title={output?.summary ?? meta.title(input)} act={meta.act} />}
     </div>
   );
 }
@@ -377,22 +401,26 @@ function RuleProposal({ cardId }: { cardId: string }) {
   if (!card || card.kind !== "policy") return card ? <p className="text-muted-foreground text-sm">{card.sentence}</p> : null;
   const now = okayed.snap?.now ?? Date.now() / 1000;
   return (
-    <div className="w-full max-w-md animate-rise space-y-2 rounded-2xl border bg-card p-4 shadow-sm">
-      <div className="font-medium text-muted-foreground text-sm">The assistant suggests a rule</div>
-      {(card.rules ?? []).map((r) => (
-        <Step key={r.id} icon={<ActionTile act={r.act} size="sm" />} className="shadow-none">
-          <Token tone={r.effect}>{r.effect === "ask" ? "Ask me" : r.effect === "allow" ? "Allow" : "Block"}</Token>
-          <span className="text-muted-foreground"> · </span>
-          {describeRule(r, now).replace(/^(Allow|Ask before|Block) /, "")}
-        </Step>
-      ))}
-      {card.status === "open" ? (
-        <div className="flex gap-2 pt-1">
-          <Button className="flex-1 rounded-xl" onClick={() => okayed.approve(card.id)}><ScanFaceIcon />Add rule</Button>
-          <Button variant="ghost" onClick={() => okayed.deny(card.id)}>Not now</Button>
-        </div>
+    <div className="w-full max-w-md animate-rise space-y-3 rounded-[26px] border bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-3">
+        <ActionTile act="policy" className="size-11 rounded-[13px]" />
+        <span className="font-semibold text-[17px]">A new rule</span>
+      </div>
+      <div className="space-y-2">
+        {(card.rules ?? []).map((r) => (
+          <Step key={r.id} icon={<ActionTile act={r.act} size="sm" />} className="shadow-none">
+            <Token tone={r.effect}>{r.effect === "ask" ? "Ask me" : r.effect === "allow" ? "Allow" : "Block"}</Token>
+            <span className="text-muted-foreground"> · </span>
+            {describeRule(r, now).replace(/^(Allow|Ask before|Block) /, "")}
+          </Step>
+        ))}
+      </div>
+      {card.status === "open" || card.status === "confirming" ? (
+        <SwipeDecide title={card.status === "confirming" ? "Adding…" : "Swipe to add the rule"} label="Add the rule" disabled={card.status === "confirming"} onAllow={() => okayed.approve(card.id)} back={{ word: "Not now", onBack: () => okayed.deny(card.id) }} />
       ) : (
-        <p className="pt-1 text-muted-foreground text-sm">{card.status === "confirmed" ? "Added. It's in Rules." : "Not added."}</p>
+        <Decided ok={card.status === "confirmed"}>
+          <span className="text-muted-foreground">{card.status === "confirmed" ? "Added. It's in Rules." : "Not added."}</span>
+        </Decided>
       )}
     </div>
   );
