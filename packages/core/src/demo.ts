@@ -57,7 +57,7 @@ const SPECS = {
     input: z.object({ repo: z.string().describe("owner/name, e.g. adrianmross/okayed") }),
     act: "github.read",
     res: (i: { repo: string }) => `github:${repoOf(i.repo)}`,
-    why: (i: { repo: string }) => `to read ${repoOf(i.repo)}`,
+    why: (i: { repo: string }) => `I want to read ${repoOf(i.repo)} to answer you.`,
     done: (i: { repo: string }) => `Read ${repoOf(i.repo)}: 12 open issues, 3 open pull requests.`,
   } satisfies Spec<{ repo: string }>,
   comment_on_pull_request: {
@@ -65,7 +65,7 @@ const SPECS = {
     input: z.object({ repo: z.string(), number: z.number().int().positive(), comment: z.string().max(500) }),
     act: "github.pr.comment",
     res: (i: { repo: string; number: number }) => `github:${repoOf(i.repo)}/pull/${i.number}`,
-    why: (i: { comment: string }) => `to comment: ${i.comment.slice(0, 80)}`,
+    why: (i: { comment: string }) => `I want to comment “${i.comment.slice(0, 80)}”.`,
     done: (i: { repo: string; number: number }) => `Commented on PR #${i.number} in ${repoOf(i.repo)}.`,
   } satisfies Spec<{ repo: string; number: number; comment: string }>,
   merge_pull_request: {
@@ -73,7 +73,7 @@ const SPECS = {
     input: z.object({ repo: z.string(), number: z.number().int().positive() }),
     act: "github.pr.merge",
     res: (i: { repo: string; number: number }) => `github:${repoOf(i.repo)}/pull/${i.number}@${demoHead(repoOf(i.repo), i.number)}`,
-    why: (i: { number: number }) => `checks are green on #${i.number}`,
+    why: (i: { number: number }) => `Checks are green on #${i.number}, so it's ready to merge.`,
     done: (i: { repo: string; number: number }) => `Merged PR #${i.number} into ${repoOf(i.repo)} at ${demoHead(repoOf(i.repo), i.number).slice(0, 7)}.`,
   } satisfies Spec<{ repo: string; number: number }>,
   deploy_site: {
@@ -81,7 +81,7 @@ const SPECS = {
     input: z.object({ site: z.string().describe("host, e.g. openmeadow.org"), environment: z.enum(["production", "staging", "preview"]) }),
     act: "site.deploy",
     res: (i: { site: string; environment: string }) => `site:${i.site.toLowerCase()}/${i.environment}`,
-    why: (i: { environment: string }) => `ship the latest build to ${i.environment}`,
+    why: (i: { environment: string }) => `I want to ship the latest build to ${i.environment}.`,
     done: (i: { site: string; environment: string }) => `Deployed ${i.site} to ${i.environment}.`,
   } satisfies Spec<{ site: string; environment: string }>,
   buy: {
@@ -89,7 +89,7 @@ const SPECS = {
     input: z.object({ item: z.string(), amount_usd: z.number().positive().max(10000) }),
     act: "spend.money",
     res: (i: { amount_usd: number }) => `money:card-1/USD/${Math.ceil(i.amount_usd)}`,
-    why: (i: { item: string }) => `to buy ${i.item}`,
+    why: (i: { item: string }) => `I want to buy ${i.item} for you.`,
     done: (i: { item: string; amount_usd: number }) => `Bought ${i.item} for $${i.amount_usd}.`,
   } satisfies Spec<{ item: string; amount_usd: number }>,
 };
@@ -155,8 +155,8 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
 }
 
 export const DEMO_SYSTEM = `You are a helpful engineering assistant in a demo of okayed, a service that turns a person's okay into an exact, signed, expiring permission.
-You can read repositories, comment on and merge pull requests, deploy sites and buy things, but only through your tools. Every tool call is checked by okayed: the person's rules may allow it, ask the person (who allows it with Face ID), or block it. All actions are simulated; say so briefly when you report a result.
-Rules: use a tool whenever the person asks you to do something; never claim something happened unless the tool result says done: true; if a tool was refused or not approved, say so plainly and don't retry. Repos default to owner adrianmross. Keep replies to one or two short sentences.
+You can read repositories, comment on and merge pull requests, deploy sites and buy things, but only through your tools. Every tool call is checked by okayed: the person's rules may allow it, ask the person (who allows it with Face ID), or block it. All actions are simulated.
+Rules: use a tool whenever the person asks you to do something; never claim something happened unless the tool result says done: true; if a tool was refused or not approved, say so plainly and don't retry. Repos default to owner adrianmross. Keep replies to one short sentence: the chat already shows each action, how it was allowed and its receipt, so don't repeat those.
 If the person describes a rule ("always allow merges in okayed for two weeks", "never deploy to production"), call propose_policy with their sentence.`;
 
 // ---------- a scripted model, for running without Workers AI ----------
@@ -187,7 +187,7 @@ export function scriptedStep(prompt: LanguageModelV4Prompt): Step {
     if (out.type === "error-text") return { text: `I couldn't: ${out.value}` };
     if (out.type === "json" && out.value && typeof out.value === "object") {
       const v = out.value as Record<string, unknown>;
-      if (v.done === true) return { text: `Done: ${v.summary} This was simulated, allowed by ${v.approvedBy}; the permission is now used up.` };
+      if (v.done === true) return { text: `${v.summary}` };
       if (v.done === false) return { text: `I couldn't: ${v.reason}.` };
       if ("proposed" in v) return { text: v.proposed ? `Here's the rule I'd add: ${v.summary} Add it if it looks right.` : `${v.summary}` };
     }
