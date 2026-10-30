@@ -28,6 +28,45 @@ async function say(text) {
   await page.keyboard.press("Enter");
 }
 
+/** The latest card's swipe track, once it has risen and the chat has finished scrolling to it. */
+async function latestTrack(name) {
+  const track = page.getByRole("button", { name }).last();
+  await track.waitFor({ timeout: 20000 });
+  await track.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(900);
+  return track;
+}
+
+/** Drags across a track's box: from its start to its end, or back. */
+async function drag(box, rightward) {
+  const y = box.y + box.height / 2;
+  const [from, to] = rightward ? [box.x + 26, box.x + box.width - 6] : [box.x + box.width - 26, box.x + 4];
+  await page.mouse.move(from, y);
+  await page.mouse.down();
+  await page.mouse.move(to, y, { steps: 18 });
+  await page.mouse.up();
+}
+
+/**
+ * One hold: press a pill, wait for its chips, rest on one, slide up into the track by the knob, and swipe. The
+ * track's box is taken first, as its name changes to what it says during the hold.
+ */
+async function holdAndSwipe(pillName, chip, track, rightward) {
+  const box = await track.boundingBox();
+  const pill = await page.getByRole("button", { name: pillName, exact: true }).last().boundingBox();
+  await page.mouse.move(pill.x + pill.width / 2, pill.y + pill.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  const c = await page.locator(`[data-chip="${chip}"]`).boundingBox();
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2, { steps: 6 });
+  await page.waitForTimeout(350);
+  const y = box.y + box.height / 2;
+  const [into, to] = rightward ? [box.x + 30, box.x + box.width - 6] : [box.x + box.width - 30, box.x + 4];
+  await page.mouse.move(into, y, { steps: 6 });
+  await page.mouse.move(to, y, { steps: 16 });
+  await page.mouse.up();
+}
+
 try {
   await page.goto(WEB);
   await page.evaluate(() => localStorage.clear());
@@ -36,57 +75,36 @@ try {
   await page.waitForSelector("text=What should we do?", { timeout: 15000 });
   check(true, "a new account opens on the chat");
 
-  // Decide by hold and slide on this device. Allow once and Don't allow stay taps; a quick tap on Always allow…
-  // still opens the editor.
-  await page.goto(`${WEB}/#settings`);
-  await page.getByRole("radio", { name: "Hold and slide" }).click();
-  await page.goto(`${WEB}/#chat`);
-  await page.waitForSelector("text=What should we do?", { timeout: 15000 });
-
   await page.click("text=Merge PR #182 in okayed");
-  await page.waitForSelector("text=/allowed by your rules/", { timeout: 20000 });
-  check(await page.isVisible("text=by your rules"), "a checked merge is allowed by the default rules, with a receipt");
+  await page.waitForSelector("text=/^Merged PR #182 into adrianmross\\/okayed/", { timeout: 20000 });
+  check(await page.isVisible("text=by your rules"), "a checked merge is allowed by the default rules: one line, and a one-line reply");
 
   await say("Deploy openmeadow to production");
-  const faceId = page.getByRole("button", { name: /^(Allow once|Set up Face ID and allow)$/ }).first();
-  await faceId.waitFor({ timeout: 20000 });
-  check(await page.isVisible("text=High risk"), "a production deploy asks, with a high-risk approval card");
-  await faceId.click();
-  await page.waitForSelector("text=/Deployed openmeadow.org to production/", { timeout: 30000 });
-  check(await page.isVisible("text=with Face ID"), "Face ID (a passkey bound to the request) allows it, and the assistant carries on");
+  const allow = await latestTrack("Allow once");
+  check(await page.isVisible("text=High risk") && await page.isVisible("text=/Allow Assistant to deploy/"), "a production deploy asks, with a high-risk approval card in plain words");
+  await drag(await allow.boundingBox(), true);
+  await page.waitForSelector("text=Deployed openmeadow.org to production.", { timeout: 30000 });
+  check(await page.isVisible("text=with Face ID"), "swiping allows it with Face ID (a passkey bound to the request), and the assistant carries on");
 
   await say("Buy openmeadow.dev for $12");
-  await page.locator("text=Don't allow").first().waitFor({ timeout: 20000 });
-  await page.locator("text=Don't allow").first().click();
+  await latestTrack("Pay $12.00");
+  await page.getByRole("button", { name: "Not now" }).last().click();
+  await page.waitForTimeout(300);
+  await drag(await page.getByRole("button", { name: "Swipe for not now" }).last().boundingBox(), false);
   await page.waitForSelector("text=/Okay, I won't/", { timeout: 20000 });
-  check(true, "saying no stops the purchase, and the assistant says so");
+  check(true, "a purchase asks with a money card; Not now, then a swipe left, stops it, and the assistant says so");
 
   await say("Deploy openmeadow to production");
-  await page.getByRole("button", { name: "Always allow…" }).last().click();
-  await page.getByRole("button", { name: "Add rule and allow" }).click();
-  await page.waitForSelector("text=Rule added.", { timeout: 10000 });
-  // Each deploy leaves a receipt and a reply that name it: four mentions once both have run.
-  await page.waitForFunction(() => document.body.innerText.split("Deployed openmeadow.org to production").length > 4, null, { timeout: 30000 });
-  check(true, "“Always allow…” turns the request into a rule and allows it with one Face ID");
+  await holdAndSwipe("Always", "forever", await latestTrack("Allow once"), true);
+  await page.waitForSelector("text=Rule added: allowed from now on.", { timeout: 10000 });
+  await page.waitForFunction(() => document.body.innerText.split("Deployed openmeadow.org to production.").length > 2, null, { timeout: 30000 });
+  check(true, "holding Always, resting on ∞ and swiping makes a rule and allows this one with one Face ID");
 
-  // Hold and slide: Block… held, slid up one rung (1 day) and across, blocks this purchase and ones like it.
-  await say("Buy openmeadow.dev for $12");
-  const blockBtn = page.getByRole("button", { name: "Block…" }).last();
-  await blockBtn.waitFor({ timeout: 20000 });
-  // Let the card finish rising and the chat finish scrolling, so the press lands where the button is.
-  await blockBtn.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(800);
-  const box = await blockBtn.boundingBox();
-  const [bx, by] = [box.x + box.width / 2, box.y + box.height / 2];
-  await page.mouse.move(bx, by);
-  await page.mouse.down();
-  await page.mouse.move(bx, by - 10, { steps: 3 });
-  await page.mouse.move(bx, by - 40, { steps: 6 });
-  await page.mouse.move(bx + 700, by - 40, { steps: 20 });
-  await page.mouse.up();
+  await say("Deploy buzz.dev to production");
+  await holdAndSwipe("Deny", "day", await latestTrack("Allow once"), false);
   await page.waitForSelector("text=Rule added: blocked from now on.", { timeout: 10000 });
   await page.waitForFunction(() => document.body.innerText.split("Okay, I won't").length > 2, null, { timeout: 20000 });
-  check(true, "hold and slide on Block… adds a one-day block rule and refuses the purchase");
+  check(true, "holding Deny, resting on 1d and swiping left blocks requests like it for a day, and refuses this one");
 
   await page.click('button:has-text("Transcript")');
   check(await page.isVisible("text=/\"assurance\": \"webauthn\"/"), "the transcript records the grant's Face ID assurance");
@@ -99,7 +117,7 @@ try {
 
   await page.goto(`${WEB}/#rules`);
   check(await page.isVisible("text=Deploy to production"), "the new rule is in Rules");
-  check(await page.locator("button", { hasText: "Spend money" }).filter({ hasText: "Blocked" }).count() >= 1, "so is the block, as a Blocked tile");
+  check(await page.locator("button", { hasText: "Deploy" }).filter({ hasText: "Blocked" }).count() >= 1, "so is the block, as a Blocked tile");
   await page.click("text=Merge PRs");
   await page.click('button[aria-pressed="false"]:has-text("Ask me")');
   await page.click('button:has-text("Save")');
