@@ -162,8 +162,19 @@
   from { transform: translateY(6px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+/* A tick that draws itself, and a light that sweeps once across a money card. */
+@keyframes tick-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes sheen-sweep {
+  from { left: -30%; opacity: 1; }
+  to { left: 130%; opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   :root { --animate-seal: none; --animate-rise: none; }
+  .okayed-tick, .okayed-sheen { animation: none; }
+  .okayed-sheen { display: none; }
 }
 
 @layer base {
@@ -187,4 +198,6 @@
   .okayed-tile[data-tone="spend"] { --tile-from: var(--tile-spend-from); --tile-to: var(--tile-spend-to); }
   .okayed-tile[data-tone="policy"] { --tile-from: var(--tile-policy-from); --tile-to: var(--tile-policy-to); }
   .okayed-tile[data-tone="any"] { --tile-from: var(--tile-any-from); --tile-to: var(--tile-any-to); }
+  .okayed-tick { stroke-dasharray: 1; stroke-dashoffset: 0; animation: tick-draw 280ms 90ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .okayed-sheen { left: -30%; opacity: 0; animation: sheen-sweep 900ms 250ms ease-in-out both; }
 }
