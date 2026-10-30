@@ -223,3 +223,23 @@ principals.
 - `feat: organization limits and SCIM provisioning on the Worker and on Node`
 - `feat(web): show an organization's limits above your rules`
 - `docs: Durable Objects, Cloudflare, and other permission systems`
+
+## 12. Swipe to decide, and a quieter chat
+
+It came with a screenshot of an approval card from that earlier work.
+
+```text
+The chat still isn't streamlined enough: too many cards, when those should go to the transcript or receipts. This is
+how we showed the card in [redacted], and closer to it looks better, especially holding to choose a duration. Look at
+how it's done in that code, and the same for the swipe actions and payments. Take the best of each, or let it be
+adapted slightly.
+```
+
+- `feat(design): swipe to decide, with a tested gesture model`
+- `feat(design): the approval card asks in plain words, and payments are money cards`
+- `feat(core): the demo assistant replies in one line, and gives its reasons in its own words`
+- `feat(web): one line per action, and swipe everywhere`
+- `feat(playground): every swipe configuration, payments included`
+- `chore(mcp): keep the CLI executable`
+- `test: drive the browser test by swipe and hold`
+- `docs: swipe to decide, money cards and a quieter chat`
