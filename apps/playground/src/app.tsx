@@ -26,7 +26,7 @@ export function App() {
             <img src="./favicon.svg" alt="" className="size-7" />
             okayed <span className="font-normal text-muted-foreground">playground</span>
           </a>
-          <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && (location.hash = v)} className="ml-auto">
+          <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && (location.hash = v)} className="ml-auto max-w-full overflow-x-auto">
             <ToggleGroupItem value="ask">Ask your rules</ToggleGroupItem>
             <ToggleGroupItem value="words">Words → grant</ToggleGroupItem>
             <ToggleGroupItem value="orgs">Sign-in &amp; orgs</ToggleGroupItem>
