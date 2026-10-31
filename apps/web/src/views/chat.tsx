@@ -82,8 +82,8 @@ export function ChatView() {
           <ToggleGroupItem value="receipts">Receipts</ToggleGroupItem>
           <ToggleGroupItem value="transcript">Transcript</ToggleGroupItem>
         </ToggleGroup>
-        <Button variant="ghost" size="icon-sm" aria-label="New chat" title="New chat" onClick={() => chat.clearHistory()}>
-          <SquarePenIcon />
+        <Button variant="ghost" size="sm" title="Clears the conversation. Rules, permissions and history stay." onClick={() => chat.clearHistory()}>
+          <SquarePenIcon /><span className="hidden sm:inline">Reset chat</span><span className="sr-only sm:hidden">Reset chat</span>
         </Button>
       </div>
 
