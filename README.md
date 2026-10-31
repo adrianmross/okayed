@@ -8,7 +8,7 @@ grant before it acts.
 > "I approve merging #182" → **Lets assistant merge PR #182 in adrianmross/okayed at 3f9a1c2, once, within the next 15
 > minutes.** It does not cover any other PR, a newer commit, a second use, or any other agent.
 
-- **Web demo:** _deployed link goes here_ · **Playground:** _deployed link goes here_
+- **Web demo:** [okayed.winter-tooth-73af.workers.dev](https://okayed.winter-tooth-73af.workers.dev) · **Playground:** [/playground](https://okayed.winter-tooth-73af.workers.dev/playground/)
 - Runs on Cloudflare, as one Worker: Workers AI (Llama 3.3, Whisper), the Agents SDK (a Durable Object per user,
   `AIChatAgent` for the chat, `McpAgent` for remote MCP), Workflows, Queues, KV, Analytics Engine, rate limiting,
   Access, Turnstile, AI Gateway and static assets. See [Cloudflare, end to end](#cloudflare-end-to-end). The core is
