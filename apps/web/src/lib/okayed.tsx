@@ -19,6 +19,8 @@ interface Okayed {
   card: (id?: string) => Card | undefined;
   grant: (id?: string) => (GrantRecord & { sentence: string }) | undefined;
   signOut: () => void;
+  /** Starts the demo over on a fresh account. */
+  reset: () => Promise<void>;
 }
 
 const Ctx = createContext<Okayed | null>(null);
@@ -37,7 +39,7 @@ export function useOkayed(): Okayed {
 }
 
 /** Keeps the person's snapshot live over the Agents SDK socket and offers the actions every view uses. */
-export function OkayedProvider({ session, onSignOut, children }: { session: Session; onSignOut: () => void; children: ReactNode }) {
+export function OkayedProvider({ session, onSignOut, onReset, children }: { session: Session; onSignOut: () => void; onReset: () => Promise<void>; children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const url = new URL(session.api);
   useAgent<Snapshot | null>({
@@ -90,8 +92,9 @@ export function OkayedProvider({ session, onSignOut, children }: { session: Sess
       card: (id) => (id ? snap?.cards.find((c) => c.id === id) : undefined),
       grant: (id) => (id ? snap?.grants.find((g) => g.grant.id === id) : undefined),
       signOut: onSignOut,
+      reset: onReset,
     }),
-    [session, snap, run, callApi, onSignOut],
+    [session, snap, run, callApi, onSignOut, onReset],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

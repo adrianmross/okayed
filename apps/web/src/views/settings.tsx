@@ -7,13 +7,14 @@ import { Input } from "@okayed/design/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@okayed/design/ui/item";
 import { Spinner } from "@okayed/design/ui/spinner";
 import { DEFAULT_POSTURE, type Rule } from "@okayed/engine";
-import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, ScanFaceIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, RotateCcwIcon, ScanFaceIcon, ShieldCheckIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Page, Section } from "../components/page";
 import { useOkayed } from "../lib/okayed";
 import { useApprovalStyle } from "../lib/style";
 import { passkeyName, passkeysSupported, setUpPasskey } from "../lib/passkey";
+import { RESET_CHAT } from "./chat";
 
 const PRESETS: { name: string; text: string; rules: Rule[]; tone: "deploy" | "merge" | "read" }[] = [
   { name: "Balanced", text: "Reads, comments, merges with passing checks and staging deploys are allowed. Production and money ask you.", rules: DEFAULT_POSTURE, tone: "deploy" },
@@ -109,7 +110,23 @@ export function SettingsView() {
           </div>
         </Section>
 
-        <Section title="Account">
+        <Section title="Start over">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Item variant="outline" className="bg-card">
+              <ItemContent>
+                <ItemTitle>Reset chat</ItemTitle>
+                <ItemDescription>Clears the conversation. Your rules, permissions and history stay.</ItemDescription>
+              </ItemContent>
+              <ItemActions><Button variant="outline" size="sm" onClick={() => (dispatchEvent(new Event(RESET_CHAT)), toast.success("Chat cleared."))}><SquarePenIcon />Reset</Button></ItemActions>
+            </Item>
+            {!okayed.session.access && <ResetDemo />}
+          </div>
+        </Section>
+
+        <Section title="Account" description="This demo account is anonymous. A company would sign people in with its own identity provider, with limits from their groups.">
+          <a href="playground/#orgs" className="inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline">
+            See how Okta, Entra, Google and OAuth plug in<ChevronRightIcon className="size-4" />
+          </a>
           <Collapsible className="group rounded-2xl border bg-card">
             <CollapsibleTrigger className="flex w-full items-center gap-2 p-4 text-left font-medium text-sm">
               Advanced
@@ -132,6 +149,41 @@ export function SettingsView() {
         </Section>
       </div>
     </Page>
+  );
+}
+
+/** Everything back to the start: a fresh demo account, after taking back what the old one's agents hold. */
+function ResetDemo() {
+  const okayed = useOkayed();
+  const [busy, setBusy] = useState(false);
+  const reset = async () => {
+    setBusy(true);
+    try {
+      await okayed.reset();
+    } catch (e) {
+      toast.error((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Item variant="outline" className="bg-card">
+      <ItemContent>
+        <ItemTitle>Reset demo</ItemTitle>
+        <ItemDescription>Everything back to the start: chat, rules, permissions, history and passkeys.</ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <Dialog>
+          <DialogTrigger asChild><Button variant="outline" size="sm" className="text-deny"><RotateCcwIcon />Reset</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reset the demo?</DialogTitle>
+              <DialogDescription>Every permission your agents hold is taken back, and you start again on a fresh demo account with the starting rules. You'll set up {passkeyName()} again.</DialogDescription>
+            </DialogHeader>
+            <Button variant="destructive" onClick={reset} disabled={busy}>{busy && <Spinner />}Reset everything</Button>
+          </DialogContent>
+        </Dialog>
+      </ItemActions>
+    </Item>
   );
 }
 
