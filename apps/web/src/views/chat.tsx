@@ -304,10 +304,15 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
     if (!ok) setApproving(false);
   };
 
-  const waiting = part.state === "approval-requested" && !!card?.draft;
+  // A request your rules already allowed passes through approval-requested for a moment before the chat is told; it
+  // stays "working…" rather than flashing "needs you" and the card. Only a request whose card is still open asks (a
+  // rule-allowed one starts out "confirming").
+  const asks = part.state === "approval-requested" && req?.status === "pending" && card?.status === "open";
+  const waiting = asks && !!card?.draft;
   const done = part.state === "output-available" && output?.done === true;
+  const settled = part.state.startsWith("output-");
   const status =
-    part.state === "input-streaming" || part.state === "input-available" || part.state === "approval-responded" ? (
+    part.state === "input-streaming" || part.state === "input-available" || part.state === "approval-responded" || (part.state === "approval-requested" && !asks) ? (
       <Shimmer className="text-muted-foreground">working…</Shimmer>
     ) : part.state === "approval-requested" ? (
       <span className="text-[color-mix(in_oklch,var(--ask)_70%,var(--foreground))]">needs you</span>
@@ -332,9 +337,10 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
       >
         <ActionTile act={meta.act} size="sm" />
         <span className="min-w-0 truncate font-medium">{meta.title(input)}</span>
-        {done ? <CheckIcon className="size-4 shrink-0 text-allow" /> : part.state === "output-denied" || (part.state === "output-available" && !output?.done && name !== "propose_policy") ? <XIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
-        <span className="shrink-0 whitespace-nowrap">{status}</span>
-        {grant && <span className="ml-auto flex shrink-0 items-center gap-1 text-muted-foreground text-xs">Receipt<ChevronRightIcon className={cn("size-3.5 motion-safe:transition-transform", open && "rotate-90")} /></span>}
+        {done ? <CheckIcon className="size-4 shrink-0 animate-rise text-allow" /> : part.state === "output-denied" || (part.state === "output-available" && !output?.done && name !== "propose_policy") ? <XIcon className="size-4 shrink-0 animate-rise text-muted-foreground" /> : null}
+        {/* Keyed by what it says, so each change eases in instead of swapping. */}
+        <span key={settled ? part.state : asks ? "asks" : "working"} className="shrink-0 animate-rise whitespace-nowrap">{status}</span>
+        {grant && settled && <span className="ml-auto flex shrink-0 animate-rise items-center gap-1 text-muted-foreground text-xs">Receipt<ChevronRightIcon className={cn("size-3.5 motion-safe:transition-transform", open && "rotate-90")} /></span>}
       </button>
 
       {waiting && card?.draft && (
