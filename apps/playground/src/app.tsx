@@ -1,13 +1,15 @@
 import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { useEffect, useState } from "react";
 import { AskView } from "./ask";
+import { OrgsView } from "./orgs";
 import { ComponentsView } from "./components";
 import { WordsView } from "./words";
 
 // Served at /playground by the same Worker as the demo; in development the demo is on its own port.
 const WEB = (import.meta.env.VITE_WEB_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:5173" : "../");
-type View = "ask" | "words" | "components";
-const read = (): View => (location.hash === "#words" ? "words" : location.hash === "#components" ? "components" : "ask");
+type View = "ask" | "words" | "orgs" | "components";
+const VIEWS: View[] = ["ask", "words", "orgs", "components"];
+const read = (): View => VIEWS.find((v) => `#${v}` === location.hash) ?? "ask";
 
 export function App() {
   const [view, setView] = useState<View>(read);
@@ -27,12 +29,13 @@ export function App() {
           <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={(v) => v && (location.hash = v)} className="ml-auto">
             <ToggleGroupItem value="ask">Ask your rules</ToggleGroupItem>
             <ToggleGroupItem value="words">Words → grant</ToggleGroupItem>
+            <ToggleGroupItem value="orgs">Sign-in &amp; orgs</ToggleGroupItem>
             <ToggleGroupItem value="components">Components</ToggleGroupItem>
           </ToggleGroup>
           <a href={WEB} className="text-muted-foreground text-sm underline-offset-4 hover:underline">Try the demo ↗</a>
         </div>
       </header>
-      {view === "ask" ? <AskView /> : view === "words" ? <WordsView /> : <ComponentsView />}
+      {view === "ask" ? <AskView /> : view === "words" ? <WordsView /> : view === "orgs" ? <OrgsView /> : <ComponentsView />}
     </div>
   );
 }

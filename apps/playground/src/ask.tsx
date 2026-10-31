@@ -4,8 +4,8 @@ import { CATALOG, DEFAULT_POSTURE, decideAll, labelRes, personalLayer, ruleParts
 import { useState } from "react";
 import { NOW, QUESTION_TARGETS, TARGETS } from "./data";
 
-const WORD = { allow: "Yes", ask: "Asks you first", deny: "No" } as const;
-const WORD_CLS = { allow: "text-allow", ask: "text-[color-mix(in_oklch,var(--ask)_75%,var(--foreground))]", deny: "text-deny" } as const;
+export const WORD = { allow: "Yes", ask: "Asks you first", deny: "No" } as const;
+export const WORD_CLS = { allow: "text-allow", ask: "text-[color-mix(in_oklch,var(--ask)_75%,var(--foreground))]", deny: "text-deny" } as const;
 const AGENTS = ["agent:assistant", "agent:ci-bot"];
 const WHEN: [string, number][] = [["now", 0], ["in an hour", 3600], ["tomorrow", 86400], ["in two weeks", 14 * 86400]];
 
