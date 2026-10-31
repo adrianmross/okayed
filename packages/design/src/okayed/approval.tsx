@@ -51,6 +51,8 @@ export interface ApprovalCardProps {
   /** A payment's purpose and how it would be paid, for the money card. */
   what?: ReactNode;
   method?: string;
+  /** Show the scope and limits without a tap. */
+  detailsOpen?: boolean;
   /** Replaces the decision area entirely, for implementations that build their own. */
   actions?: ReactNode;
   className?: string;
@@ -157,7 +159,7 @@ const MONEY: Record<ApprovalState, MoneyState> = { pending: "open", approving: "
  * over this exact request, and the permission carries it. A payment is a money card.
  */
 export function ApprovalCard(p: ApprovalCardProps) {
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(p.detailsOpen ?? false);
   const meta = actionMeta(p.act);
   const flow = p.flow ?? "swipe";
   const pending = p.state === "pending" || p.state === "approving";
