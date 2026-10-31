@@ -111,8 +111,8 @@ try {
 
   await page.goto(`${WEB}/#activity`);
   await page.click('button[role="tab"]:has-text("History")');
-  await page.waitForSelector("text=/^[0-9a-f]{10}$/", { timeout: 10000 });
-  const receipts = await page.locator("text=/^[0-9a-f]{10}$/").count();
+  await page.waitForSelector("text=/^[0-9a-f]{8}…[0-9a-f]{4}$/", { timeout: 10000 });
+  const receipts = await page.locator("text=/^[0-9a-f]{8}…[0-9a-f]{4}$/").count();
   check(receipts >= 3, `History keeps a signed receipt for each permission (${receipts})`);
 
   await page.goto(`${WEB}/#rules`);
