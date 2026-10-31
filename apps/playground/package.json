@@ -10,8 +10,10 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@okayed/core": "workspace:*",
     "@okayed/design": "workspace:*",
     "@okayed/engine": "workspace:*",
+    "@okayed/grant": "workspace:*",
     "@okayed/interop": "workspace:*",
     "lucide-react": "^1.64.0",
     "react": "^19.2.0",
