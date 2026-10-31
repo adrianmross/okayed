@@ -1,6 +1,14 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import { getAgentByName } from "agents";
-import { convertToModelMessages, simulateStreamingMiddleware, stepCountIs, streamText, wrapLanguageModel } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  simulateStreamingMiddleware,
+  stepCountIs,
+  streamText,
+  wrapLanguageModel,
+} from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { DEMO_SYSTEM, demoTools, scriptedModel, type DemoBackend } from "@okayed/core";
 import type { Env } from "./env.ts";
@@ -11,6 +19,18 @@ import type { Env } from "./env.ts";
  */
 export class OkayedChat extends AIChatAgent<Env> {
   async onChatMessage(onFinish: unknown, options?: { abortSignal?: AbortSignal }): Promise<Response> {
+    // Each message costs a model call, so a person gets a few a minute; over that, the assistant says so.
+    if (this.env.CHAT_LIMIT && !(await this.env.CHAT_LIMIT.limit({ key: `ai:${this.name}` })).success) {
+      const id = "chat-limit";
+      const stream = createUIMessageStream({
+        execute: ({ writer }) => {
+          writer.write({ type: "text-start", id });
+          writer.write({ type: "text-delta", id, delta: "That's a lot of messages at once. Give me a minute, then ask again." });
+          writer.write({ type: "text-end", id });
+        },
+      });
+      return createUIMessageStreamResponse({ stream });
+    }
     const okayed = await getAgentByName(this.env.OkayedAgent, this.name);
     const rpc = okayed as unknown as {
       demoRequest: DemoBackend["request"];

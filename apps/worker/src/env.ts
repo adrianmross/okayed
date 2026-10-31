@@ -47,9 +47,10 @@ export interface Env {
   GITHUB_APP_INSTALLATION?: string;
   /** Turnstile on account creation. */
   TURNSTILE_SECRET?: string;
-  /** Workers rate limiting: sign-ups per address, requests per agent. */
+  /** Workers rate limiting: sign-ups per address, requests per agent, model calls (chat and voice) per person. */
   SIGNUP_LIMIT?: RateLimit;
   AGENT_LIMIT?: RateLimit;
+  CHAT_LIMIT?: RateLimit;
   /** Workers Analytics Engine: one data point per decision. */
   METRICS?: AnalyticsEngineDataset;
   /** Queues: wakes paired approver apps. */
