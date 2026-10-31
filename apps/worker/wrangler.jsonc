@@ -36,10 +36,12 @@
   ],
   // OAuth clients, codes and tokens for remote MCP. Wrangler creates the namespace on first deploy.
   "kv_namespaces": [{ "binding": "OAUTH_KV" }],
-  // Rate limits (Workers rate limiting, free): sign-ups per address and requests per agent, per minute.
+  // Rate limits (Workers rate limiting, free): sign-ups per address, requests per agent and model calls per person,
+  // per minute.
   "ratelimits": [
     { "name": "SIGNUP_LIMIT", "namespace_id": "4840", "simple": { "limit": 5, "period": 60 } },
-    { "name": "AGENT_LIMIT", "namespace_id": "4841", "simple": { "limit": 60, "period": 60 } }
+    { "name": "AGENT_LIMIT", "namespace_id": "4841", "simple": { "limit": 60, "period": 60 } },
+    { "name": "CHAT_LIMIT", "namespace_id": "4842", "simple": { "limit": 10, "period": 60 } }
   ],
   // Analytics Engine: one data point per decision (requests, issues, deploys).
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "okayed_decisions" }],

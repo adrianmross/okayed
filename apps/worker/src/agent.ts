@@ -299,6 +299,7 @@ export class OkayedAgent extends Agent<Env, Snapshot | null> {
   private async transcribe(audio: unknown): Promise<{ text: string }> {
     if (!this.env.AI) throw new OkayedError(501, "Voice needs Workers AI, which isn't available in this environment.");
     if (typeof audio !== "string" || !audio || audio.length > 8_000_000) throw new OkayedError(400, "send audio as base64, up to about 6 MB");
+    if (this.env.CHAT_LIMIT && !(await this.env.CHAT_LIMIT.limit({ key: `ai:${this.name}` })).success) throw new OkayedError(429, "Too much at once. Try again in a minute.");
     const out = (await this.env.AI.run("@cf/openai/whisper-large-v3-turbo" as keyof AiModels, { audio } as never, this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : undefined)) as { text?: string };
     return { text: (out.text ?? "").trim() };
   }
