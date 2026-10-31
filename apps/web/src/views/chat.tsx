@@ -277,17 +277,18 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   const req = okayed.requestByRef(part.toolCallId);
   const card = okayed.card(req?.cardId);
   const output = (part.state === "output-available" ? part.output : undefined) as { done?: boolean; grant?: string; summary?: string; card?: string; reason?: string } | undefined;
-  const approval = "approval" in part ? (part.approval as { id: string; approved?: boolean; reason?: string } | undefined) : undefined;
+  const approval = "approval" in part ? (part.approval as { id: string; approved?: boolean; reason?: string; isAutomatic?: boolean } | undefined) : undefined;
   const [approving, setApproving] = useState(false);
   const [open, setOpen] = useState(false);
   const { alwaysAllow, block, editor } = useRuleFromCard();
   const [style] = useApprovalStyle();
   const grant = okayed.grant(output?.grant ?? req?.grantId);
 
-  // Once okayed has issued the permission, tell the chat it was approved so the assistant carries on.
+  // Once okayed has issued the permission, tell the chat it was approved so the assistant carries on. One your rules
+  // allowed was approved on the server already; answering it again started a second reply that raced the first.
   const respondedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (part.state !== "approval-requested" || !approval || respondedFor.current === approval.id) return;
+    if (part.state !== "approval-requested" || !approval || approval.isAutomatic || respondedFor.current === approval.id) return;
     if (req?.status === "granted") {
       respondedFor.current = approval.id;
       void respond({ id: approval.id, approved: true });
@@ -307,7 +308,7 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
   // A request your rules already allowed passes through approval-requested for a moment before the chat is told; it
   // stays "working…" rather than flashing "needs you" and the card. Only a request whose card is still open asks (a
   // rule-allowed one starts out "confirming").
-  const asks = part.state === "approval-requested" && req?.status === "pending" && card?.status === "open";
+  const asks = part.state === "approval-requested" && !approval?.isAutomatic && req?.status === "pending" && card?.status === "open";
   const waiting = asks && !!card?.draft;
   const done = part.state === "output-available" && output?.done === true;
   const settled = part.state.startsWith("output-");
