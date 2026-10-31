@@ -41,6 +41,9 @@ const SUGGESTIONS: [string, string][] = [
 
 type View = "conversation" | "receipts" | "transcript";
 
+/** Dispatched on window to clear the chat from anywhere in the app. */
+export const RESET_CHAT = "okayed:reset-chat";
+
 export function ChatView() {
   const { session } = useOkayed();
   const url = new URL(session.api);
@@ -52,6 +55,14 @@ export function ChatView() {
     query: { token: session.ownerToken },
   } as never);
   const chat = useAgentChat({ agent: agent as never });
+  // Settings clears the chat from another page; the chat's socket lives here.
+  const clear = useRef(chat.clearHistory);
+  clear.current = chat.clearHistory;
+  useEffect(() => {
+    const on = () => clear.current();
+    addEventListener(RESET_CHAT, on);
+    return () => removeEventListener(RESET_CHAT, on);
+  }, []);
   const [view, setView] = useState<View>("conversation");
   const busy = chat.status === "submitted" || chat.status === "streaming";
   const send = (text: string) => text.trim() && chat.sendMessage({ text: text.trim() });
