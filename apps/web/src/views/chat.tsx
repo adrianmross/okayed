@@ -324,7 +324,7 @@ function ToolCall({ part, respond }: { part: ToolPart; respond: Respond }) {
     ) : part.state === "output-available" && output?.done === false ? (
       <span className="text-muted-foreground">didn't run{output.reason ? `: ${output.reason}` : ""}</span>
     ) : part.state === "output-error" ? (
-      <span className="text-deny">failed</span>
+      <span className="text-deny">failed{/invalid input/i.test(part.errorText ?? "") ? ": the request wasn't understood" : ""}</span>
     ) : null;
 
   return (
@@ -423,7 +423,7 @@ function RuleProposal({ cardId }: { cardId: string }) {
         ))}
       </div>
       {card.status === "open" || card.status === "confirming" ? (
-        <SwipeDecide title={card.status === "confirming" ? "Adding…" : "Swipe to add the rule"} label="Add the rule" disabled={card.status === "confirming"} onAllow={() => okayed.approve(card.id)} back={{ word: "Not now", onBack: () => okayed.deny(card.id) }} />
+        <SwipeDecide title={card.status === "confirming" ? "Adding…" : "Swipe to add the rule"} label="Add the rule" busy={card.status === "confirming"} onAllow={() => okayed.approve(card.id)} back={{ word: "Not now", onBack: () => okayed.deny(card.id) }} />
       ) : (
         <Decided ok={card.status === "confirmed"}>
           <span className="text-muted-foreground">{card.status === "confirmed" ? "Added. It's in Rules." : "Not added."}</span>

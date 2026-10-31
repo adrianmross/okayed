@@ -1,6 +1,7 @@
 import { ChevronLeftIcon, ChevronRightIcon, RepeatIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { cn } from "../lib/utils";
+import { Spinner } from "../ui/spinner";
 import {
   ARMED_MS, CHIP_H, DWELL_MS, HOLD_MS, KNOB, PAD, chipsOf, holdCommits, holdDwell, holdHome, holdMove, holdStart, knobMax, letGo, slide, tapBack,
   type Hold, type Mode, type Rect,
@@ -49,6 +50,8 @@ export interface SwipeDecideProps {
   /** The knob's glyph on a right swipe; a chevron by default. */
   knob?: ReactNode;
   disabled?: boolean;
+  /** Working on a decision (Face ID, then signing): the knob stays where it was swiped, with a spinner, until it ends. */
+  busy?: boolean;
   /** On a dark card (money): a glass track and a white knob. */
   light?: boolean;
   className?: string;
@@ -81,7 +84,7 @@ const relTo = (root: HTMLElement, el: HTMLElement): Rect => {
  * swipes: swipe the track and it grows over Not now; hold Not now and its bar takes the row, to slide left; tap it and
  * the bar waits for a left swipe. With the keyboard: Enter on the track answers what it says; the pills are buttons.
  */
-export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, always, knob: glyph, disabled, light, className }: SwipeDecideProps) {
+export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, always, knob: glyph, disabled, busy, light, className }: SwipeDecideProps) {
   const root = useRef<HTMLDivElement>(null);
   const trackEl = useRef<HTMLDivElement>(null);
   const pillsEl = useRef<HTMLDivElement>(null);
@@ -102,10 +105,11 @@ export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, al
   const spans = always?.spans ?? [];
   const blocks = (always && back?.spans) || [];
   const single = !!back && !always;
-  const canBack = !!back && !disabled;
-  const canAlways = !!always && !always.off && spans.length > 0 && !disabled;
+  const locked = disabled || busy;
+  const canBack = !!back && !locked;
+  const canAlways = !!always && !always.off && spans.length > 0 && !locked;
   const mode: Mode = holding?.kind ?? (asideHeld ? "deny" : armed);
-  const canRight = !disabled && (mode === "allow" ? !!onAllow : mode === "deny" ? canBack : canAlways);
+  const canRight = !locked && (mode === "allow" ? !!onAllow : mode === "deny" ? canBack : canAlways);
   const fromEnd = mode === "deny";
   const full = single || fromEnd;
 
@@ -122,8 +126,8 @@ export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, al
   }, [back?.word, single]);
 
   // The latest props, for handlers that outlive a render.
-  const now = useRef({ onAllow, back, always, armed, span, max });
-  now.current = { onAllow, back, always, armed, span, max };
+  const now = useRef({ onAllow, back, always, armed, span, max, busy });
+  now.current = { onAllow, back, always, armed, span, max, busy };
 
   const arm = useCallback((m: Mode) => {
     setArmed(m);
@@ -147,12 +151,23 @@ export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, al
     if (m === "always") setSpan(picked);
     clearTimeout(settle.current);
     settle.current = window.setTimeout(() => {
+      if (now.current.busy) return;
       setX(0);
       setWide(false);
       setArmed("allow");
     }, 700);
   }, []);
   useEffect(() => () => clearTimeout(settle.current), []);
+  // When the work ends without a decision (Face ID cancelled, signing failed), the knob goes home.
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) {
+      setX(0);
+      setWide(false);
+      setArmed("allow");
+    }
+    wasBusy.current = !!busy;
+  }, [busy]);
 
   // A tapped Deny goes back to Allow when nothing is done with it for a while (never mid-swipe).
   useEffect(() => {
@@ -392,7 +407,7 @@ export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, al
           className={cn("absolute inset-y-0 left-0 flex items-center overflow-hidden rounded-full", mainTone, ease)}
           style={{ right: inset, opacity: mode === "deny" ? 0 : 1 }}
         >
-          <span className="w-full truncate pr-5 pl-14 text-center font-semibold text-[15px]" style={{ opacity: (canRight ? 1 : 0.6) * (1 - progress) }}>
+          <span className={cn("w-full truncate text-center font-semibold text-[15px]", busy ? "pr-14 pl-5" : "pr-5 pl-14")} style={{ opacity: busy ? 1 : (canRight ? 1 : 0.6) * (1 - progress) }}>
             {says}
           </span>
         </div>
@@ -406,7 +421,7 @@ export function SwipeDecide({ title = "Swipe to allow", label, onAllow, back, al
           )}
           style={{ left: PAD, top: PAD, width: KNOB, height: KNOB, transform: `translateX(${nudge && !fromEnd ? 26 : x}px)` }}
         >
-          {fromEnd ? <ChevronLeftIcon strokeWidth={2.4} /> : (glyph ?? <ChevronRightIcon strokeWidth={2.4} />)}
+          {busy ? <Spinner /> : fromEnd ? <ChevronLeftIcon strokeWidth={2.4} /> : (glyph ?? <ChevronRightIcon strokeWidth={2.4} />)}
         </span>
         {single && back && (
           <button
