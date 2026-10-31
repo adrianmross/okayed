@@ -1,4 +1,4 @@
-import { ActionTile, AgentAvatar, ApprovalCard, agentName, type ApprovalFlow, type ApprovalLayout } from "@okayed/design/okayed";
+import { ActionTile, AgentAvatar, ApprovalCard, KeyChip, agentName, type ApprovalFlow, type ApprovalLayout } from "@okayed/design/okayed";
 import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
 import { Button } from "@okayed/design/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@okayed/design/ui/collapsible";
@@ -7,14 +7,13 @@ import { Input } from "@okayed/design/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@okayed/design/ui/item";
 import { Spinner } from "@okayed/design/ui/spinner";
 import { DEFAULT_POSTURE, type Rule } from "@okayed/engine";
-import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, RotateCcwIcon, ScanFaceIcon, ShieldCheckIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, KeyRoundIcon, PlugIcon, RotateCcwIcon, ScanFaceIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Page, Section } from "../components/page";
 import { useOkayed } from "../lib/okayed";
 import { useApprovalStyle } from "../lib/style";
 import { passkeyName, passkeysSupported, setUpPasskey } from "../lib/passkey";
-import { RESET_CHAT } from "./chat";
 
 const PRESETS: { name: string; text: string; rules: Rule[]; tone: "deploy" | "merge" | "read" }[] = [
   { name: "Balanced", text: "Reads, comments, merges with passing checks and staging deploys are allowed. Production and money ask you.", rules: DEFAULT_POSTURE, tone: "deploy" },
@@ -110,22 +109,24 @@ export function SettingsView() {
           </div>
         </Section>
 
-        <Section title="Start over">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Item variant="outline" className="bg-card">
-              <ItemContent>
-                <ItemTitle>Reset chat</ItemTitle>
-                <ItemDescription>Clears the conversation. Your rules, permissions and history stay.</ItemDescription>
-              </ItemContent>
-              <ItemActions><Button variant="outline" size="sm" onClick={() => (dispatchEvent(new Event(RESET_CHAT)), toast.success("Chat cleared."))}><SquarePenIcon />Reset</Button></ItemActions>
-            </Item>
-            {!okayed.session.access && <ResetDemo />}
-          </div>
-        </Section>
+        {!okayed.session.access && (
+          <Section title="Start over" description="To clear just the conversation, use Reset chat at the top of Chat.">
+            <ResetDemo />
+          </Section>
+        )}
 
         <Section title="Account" description="This demo account is anonymous. A company would sign people in with its own identity provider, with limits from their groups.">
+          <Item variant="outline" className="bg-card">
+            <ItemMedia><ActionTile tone="policy" icon={<KeyRoundIcon />} size="sm" /></ItemMedia>
+            <ItemContent>
+              <ItemTitle>{okayed.session.access ? "Signed in with your organization" : "Anonymous demo account"}</ItemTitle>
+              <ItemDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                Account <KeyChip value={snap.userId} /> Signing key <KeyChip value={snap.issuer} />
+              </ItemDescription>
+            </ItemContent>
+          </Item>
           <a href="playground/#orgs" className="inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline">
-            See how Okta, Entra, Google and OAuth plug in<ChevronRightIcon className="size-4" />
+            See how Okta, Entra, Google and OAuth plug in, and which key signs what<ChevronRightIcon className="size-4" />
           </a>
           <Collapsible className="group rounded-2xl border bg-card">
             <CollapsibleTrigger className="flex w-full items-center gap-2 p-4 text-left font-medium text-sm">
@@ -134,10 +135,6 @@ export function SettingsView() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <dl className="grid gap-x-6 gap-y-2 px-4 pb-4 text-sm md:grid-cols-[max-content_1fr]">
-                <dt className="text-muted-foreground">User id</dt>
-                <dd className="break-all font-mono text-xs">{snap.userId}</dd>
-                <dt className="text-muted-foreground">Signing key</dt>
-                <dd className="break-all font-mono text-xs">{snap.issuer}</dd>
                 <dt className="text-muted-foreground">Server</dt>
                 <dd className="break-all font-mono text-xs">{okayed.session.api}</dd>
                 <dt className="text-muted-foreground">Reads your words with</dt>
