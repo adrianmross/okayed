@@ -67,12 +67,18 @@ importers:
 
   apps/playground:
     dependencies:
+      '@okayed/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@okayed/design':
         specifier: workspace:*
         version: link:../../packages/design
       '@okayed/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@okayed/grant':
+        specifier: workspace:*
+        version: link:../../packages/grant
       '@okayed/interop':
         specifier: workspace:*
         version: link:../../packages/interop
