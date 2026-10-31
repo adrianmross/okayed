@@ -267,3 +267,28 @@ If I go to another page and back to the chat, it stops replying.
 - `fix(web): show the saved chat after a reload`
 - `fix(core): the assistant chats, asks for a missing repo and takes "prod"`
 - `fix(design): the swipe holds while Face ID and signing run`
+
+## 14. Sign-in, organizations, and who signs what
+
+```text
+There should be separate resets for the whole demo and for just the chat. And where's the non-demo part of the work?
+The playground should showcase OAuth2/OIDC integration more, with sign-in providers and organizations, to show how
+this connects in an enterprise.
+```
+
+```text
+Make the providers a sign-in screen with their logos, and show ids and keys the same way as the Nostr signing. We need
+a holistic picture.
+```
+
+```text
+If the passkey isn't set up and you ask the chat for something that needs it, it says "working" forever.
+```
+
+- `feat(web): reset the chat or the whole demo from Settings`
+- `feat(playground): show sign-in providers, org limits and OAuth scopes`
+- `feat(web): Reset chat sits in the chat header`
+- `feat(design): one KeyChip for ids and keys, used in receipts and Settings`
+- `feat(playground): a sign-in screen with provider logos and who signs what`
+- `test(e2e): read receipt ids in their KeyChip form`
+- `fix(web): a passkey prompt that never answers no longer hangs the approval`
