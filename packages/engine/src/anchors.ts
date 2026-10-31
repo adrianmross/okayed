@@ -218,6 +218,57 @@ export function extractAnchors(utterance: string, targets: Targets): Anchors {
   return a;
 }
 
+/** A stretch of a sentence and what the engine reads it as, for showing people what their words pin down. */
+export interface Span {
+  start: number;
+  end: number;
+  kind: "act" | "target" | "env" | "agent" | "time" | "condition" | "approve" | "negated" | "injection";
+  /** For `act`, the action; for `env`, the environment. */
+  act?: string;
+}
+
+/**
+ * The anchors in a sentence and where they are, from the same patterns `extractAnchors` uses, so what's highlighted
+ * is what the engine takes from the words. Where matches overlap, the earliest and longest wins.
+ */
+export function highlight(utterance: string, targets: Targets): Span[] {
+  const t = utterance.toLowerCase().replace(/[’‘]/g, "'");
+  const out: Span[] = [];
+  const all = (re: RegExp, kind: Span["kind"], act?: string) => {
+    for (const m of t.matchAll(new RegExp(re.source, "g"))) out.push({ start: m.index, end: m.index + m[0].length, kind, ...(act ? { act } : {}) });
+  };
+  all(/\bsystem\s*:|\bignore (?:all |the )?(?:previous|prior|above)\b|\b[a-z]+\.\*/, "injection");
+  for (const [act, re] of [...VERBS, ...customVerbs()]) {
+    for (const m of t.matchAll(re)) out.push({ start: m.index, end: m.index + m[0].length, kind: negated(t, m.index) ? "negated" : "act", act });
+  }
+  all(/\b(?:not|never|don't|dont|do not)\b/, "negated");
+  all(/(?:#|\bpr\s*#?|\bpull request\s*#?)\d{1,9}\b/, "target");
+  const names = [
+    ...targets.repos.flatMap((r) => [r, r.split("/")[1]!]),
+    ...targets.sites.flatMap((s) => [s.host, s.host.split(".")[0]!]),
+    ...(targets.named ?? []).flatMap((n) => n.names),
+  ];
+  for (const name of names) {
+    const re = mention(name);
+    if (re) all(re, "target");
+  }
+  all(/\b(?:the|our|my) (?:web ?site|site|web ?app|app|homepage)\b/, "target");
+  for (const [env, re] of ENVS) {
+    for (const m of t.matchAll(re)) out.push({ start: m.index, end: m.index + m[0].length, kind: negated(t, m.index) ? "negated" : "env", act: env });
+  }
+  for (const agent of targets.agents) {
+    const re = mention(agent.replace(/^agent:/, ""));
+    if (re) all(re, "agent");
+  }
+  all(/\bfor (?:the next |another |up to )?(?:\d+(?:\.\d+)?|an?|one|two|three|four|five|six|ten|fifteen|twenty|thirty|forty-five|half)(?: an?)? ?(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?)\b|\b(?:forever|permanent(?:ly)?|indefinitely|from now on)\b|\b(?:\d+|one|two|three|four|five|ten) times\b|\btwice\b/, "time");
+  all(/\b(?:once|if|when|after|as soon as)\s+(?:the\s+)?(?:ci|checks?|tests?|builds?)\b[^.;,]*?\b(?:pass(?:es|ed)?|green|succeed(?:s|ed)?|clear)/, "condition");
+  all(/\b(?:approve[ds]?|approving|go ahead|yes|okay|lgtm|ship it|do it)\b/, "approve");
+  out.sort((x, y) => x.start - y.start || y.end - x.end);
+  const kept: Span[] = [];
+  for (const sp of out) if (!kept.length || sp.start >= kept[kept.length - 1]!.end) kept.push(sp);
+  return kept;
+}
+
 /** What a policy clause says: effect words and the action families it names. */
 export interface PolicyClause {
   text: string;
