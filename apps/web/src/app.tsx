@@ -19,9 +19,9 @@ import { ActivityIcon, MessageCircleIcon, Settings2Icon, ShieldCheckIcon } from 
 import { Suspense, useCallback, useState } from "react";
 import { OkayedProvider, useOkayed } from "./lib/okayed";
 import { useRoute, type Route } from "./lib/route";
-import { loadSession, saveSession, type Session } from "./lib/session";
+import { call, createUser, loadSession, saveSession, type Session } from "./lib/session";
 import { ActivityView } from "./views/activity";
-import { ChatView } from "./views/chat";
+import { ChatView, RESET_CHAT } from "./views/chat";
 import { Connect } from "./views/connect";
 import { RulesView } from "./views/rules";
 import { SettingsView } from "./views/settings";
@@ -40,6 +40,17 @@ export function App() {
     saveSession(null);
     setSession(null);
   }, []);
+  /** A fresh demo account; the old one's permissions are taken back first, so nothing it held stays usable. */
+  const reset = useCallback(async () => {
+    if (!session) return;
+    dispatchEvent(new Event(RESET_CHAT));
+    await call(session, "POST", "/stop", { reason: "the demo was reset" }).catch(() => undefined);
+    const next = await createUser(session.api);
+    saveSession(next);
+    // A full load: swapping accounts in place left the chat suspended on the new account's history.
+    location.hash = "chat";
+    location.reload();
+  }, [session]);
   // An MCP client sent the person here to approve it (OAuth consent from /authorize).
   const connecting = location.hash.startsWith("#connect");
   if (!session) {
@@ -55,7 +66,7 @@ export function App() {
   }
   if (connecting) return <Connect session={session} />;
   return (
-    <OkayedProvider session={session} onSignOut={signOut}>
+    <OkayedProvider session={session} onSignOut={signOut} onReset={reset}>
       <Shell />
     </OkayedProvider>
   );
