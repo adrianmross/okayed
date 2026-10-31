@@ -1,6 +1,6 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
 import { getAgentByName } from "agents";
-import { convertToModelMessages, stepCountIs, streamText } from "ai";
+import { convertToModelMessages, simulateStreamingMiddleware, stepCountIs, streamText, wrapLanguageModel } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { DEMO_SYSTEM, demoTools, scriptedModel, type DemoBackend } from "@okayed/core";
 import type { Env } from "./env.ts";
@@ -28,7 +28,12 @@ export class OkayedChat extends AIChatAgent<Env> {
     const model =
       this.env.DRAFTER === "heuristic" || !this.env.AI
         ? scriptedModel()
-        : createWorkersAI({ binding: this.env.AI, ...(this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : {}) })((this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast") as never);
+        : wrapLanguageModel({
+            // Streamed tool calls from Workers AI arrive with each argument chunk twice (workers-ai-provider 4.0.1),
+            // so the model answers whole and the stream is simulated. The replies are one line anyway.
+            model: createWorkersAI({ binding: this.env.AI, ...(this.env.AI_GATEWAY ? { gateway: { id: this.env.AI_GATEWAY } } : {}) })((this.env.MODEL ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast") as never),
+            middleware: simulateStreamingMiddleware(),
+          });
     const result = streamText({
       model,
       system: DEMO_SYSTEM,
