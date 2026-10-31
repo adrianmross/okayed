@@ -186,7 +186,7 @@ export function ApprovalCard(p: ApprovalCardProps) {
       <SwipeDecide
         title={p.state === "approving" ? "Allowing…" : p.passkey === "setup" ? "Swipe to set up Face ID" : "Swipe to allow"}
         label={p.uses === 1 ? "Allow once" : "Allow"}
-        disabled={p.state === "approving"}
+        busy={p.state === "approving"}
         onAllow={p.onApprove}
         back={{ word: "Deny", onBack: p.onDeny, ...(p.onBlock ? { spans: p.blockSpans ?? BLOCK_SPANS, onSpan: (s: Span) => p.onBlock!(s.seconds ?? null) } : {}) }}
         {...(p.onAlwaysAllow ? { always: { spans: p.alwaysSpans ?? ALWAYS_SPANS, onAlways: (s: Span) => p.onAlwaysAllow!(s.seconds ?? null) } } : {})}
