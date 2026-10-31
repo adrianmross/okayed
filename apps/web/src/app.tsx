@@ -16,7 +16,7 @@ import {
   SidebarTrigger,
 } from "@okayed/design/ui/sidebar";
 import { ActivityIcon, MessageCircleIcon, Settings2Icon, ShieldCheckIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { OkayedProvider, useOkayed } from "./lib/okayed";
 import { useRoute, type Route } from "./lib/route";
 import { loadSession, saveSession, type Session } from "./lib/session";
@@ -107,7 +107,10 @@ function Shell() {
         </header>
         {/* The chat stays mounted on other pages: remounting it mid-reply lost or reordered the replies. */}
         <div className={route === "chat" ? "contents" : "hidden"}>
-          <ChatView />
+          {/* The chat loads its saved messages before it shows. */}
+          <Suspense fallback={null}>
+            <ChatView />
+          </Suspense>
         </div>
         {View && <View />}
       </SidebarInset>

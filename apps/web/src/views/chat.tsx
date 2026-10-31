@@ -51,7 +51,7 @@ export function ChatView() {
     protocol: url.protocol === "https:" ? "wss" : "ws",
     query: { token: session.ownerToken },
   } as never);
-  const chat = useAgentChat({ agent: agent as never, getInitialMessages: null });
+  const chat = useAgentChat({ agent: agent as never });
   const [view, setView] = useState<View>("conversation");
   const busy = chat.status === "submitted" || chat.status === "streaming";
   const send = (text: string) => text.trim() && chat.sendMessage({ text: text.trim() });
