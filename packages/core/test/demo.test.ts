@@ -94,6 +94,17 @@ describe("the demo assistant", () => {
     expect((await svc.snapshot()).grants).toEqual([]);
   }, 30_000);
 
+  it("asks which repo instead of drafting a rule that names none", async () => {
+    const { backend } = setup();
+    let drafted = 0;
+    const { tools } = demoTools({ ...backend, proposePolicy: async (s) => (drafted++, backend.proposePolicy(s)) });
+    const run = (sentence: string) => tools.propose_policy!.execute!({ sentence }, { toolCallId: "t", messages: [] } as never) as Promise<{ proposed: boolean }>;
+    expect((await run("Create a rule for a new repo")).proposed).toBe(false);
+    expect(drafted).toBe(0);
+    await run("always allow merges in okayed for 2 weeks");
+    expect(drafted).toBe(1);
+  });
+
   it("proposes a standing policy instead of acting on one", async () => {
     const { svc, backend } = setup();
     await svc.claim();
