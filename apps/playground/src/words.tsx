@@ -1,13 +1,15 @@
 import { ActionTile, AgentAvatar, ApprovalCard, Choice, agentName } from "@okayed/design/okayed";
 import { Button } from "@okayed/design/ui/button";
+import { Kbd } from "@okayed/design/ui/kbd";
 import { Switch } from "@okayed/design/ui/switch";
 import { Textarea } from "@okayed/design/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
-import { humanDuration, labelRes, narrowGrant, personalLayer, type NarrowResult, type Request } from "@okayed/engine";
+import { highlight, humanDuration, labelRes, narrowGrant, personalLayer, type NarrowResult, type Request, type Span } from "@okayed/engine";
 import { PlusIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import { DRAFTS, NOW, PR, REQUESTS, SAYINGS, TARGETS } from "./data";
+import { Info } from "./info";
 
 const AGENTS = ["agent:assistant", "agent:ci-bot"];
 const VERB: Record<string, string> = { "github.read": "read", "github.pr.comment": "comment on", "github.pr.merge": "merge", "site.deploy": "deploy", "spend.money": "spend" };
@@ -40,15 +42,15 @@ export function WordsView() {
   };
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-8 px-4 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:px-8">
+    <main className="mx-auto grid max-w-5xl grid-cols-1 gap-8 px-4 py-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:px-8">
       <div className="space-y-6">
-        <Field n="1" title="The person says" hint="Type what someone might tell their agent. Press Tab to take a suggestion.">
+        <Field n="1" title="The person says" hint="Colored words are what okayed understood: actions, targets, environments, agents, time limits and conditions. Red is a no, or something trying to give orders.">
           <GhostInput value={said} onChange={setSaid} />
         </Field>
-        <Field n="2" title="What's pending" hint="What agents are waiting on. okayed ties the words to one of these, or asks which.">
+        <Field n="2" title="What's pending" hint="okayed ties the words to one of these, or asks which.">
           <Queue queue={queue} setQueue={setQueue} />
         </Field>
-        <Field n="3" title="A model drafts the grant (untrusted)" hint="Whatever the model returns, okayed only keeps what the words and the queue support.">
+        <Field n="3" title="A model drafts the grant" hint="Untrusted. okayed keeps only what the words and the queue support.">
           <ToggleGroup type="single" variant="outline" size="sm" value={draftName} onValueChange={(v) => v && pick(v)} className="flex-wrap">
             {Object.keys(DRAFTS).map((k) => <ToggleGroupItem key={k} value={k}>{k}</ToggleGroupItem>)}
           </ToggleGroup>
@@ -57,7 +59,7 @@ export function WordsView() {
       </div>
       <div className="space-y-6">
         <Field n="4" title="What the person is asked to allow">
-          {said.trim() ? <Result r={r} /> : <div className="rounded-2xl border border-dashed p-6 text-center text-muted-foreground text-sm">What the person says decides what they're asked. Start typing, or press Tab for an example.</div>}
+          {said.trim() ? <Result r={r} /> : <div className="rounded-2xl border border-dashed p-6 text-center text-muted-foreground text-sm">Start typing to see what they'd be asked.</div>}
         </Field>
         {said.trim() && r.kind === "grant" && (
           <Field n="5" title="Draft against grant">
@@ -67,6 +69,30 @@ export function WordsView() {
       </div>
     </main>
   );
+}
+
+// Color only: a change of weight or padding would pull the overlay off the caret.
+const SPAN_CLS: Record<Span["kind"], string> = {
+  act: "bg-primary/12 text-primary",
+  target: "bg-sky-500/12 text-sky-700 dark:text-sky-300",
+  env: "bg-amber-500/14 text-amber-700 dark:text-amber-300",
+  agent: "bg-violet-500/12 text-violet-700 dark:text-violet-300",
+  time: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  condition: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  approve: "bg-allow/14 text-allow",
+  negated: "bg-deny/12 text-deny line-through",
+  injection: "bg-deny/18 text-deny underline decoration-wavy",
+};
+
+function Highlighted({ text }: { text: string }) {
+  const out: React.ReactNode[] = [];
+  let at = 0;
+  for (const s of highlight(text, TARGETS)) {
+    out.push(text.slice(at, s.start), <span key={s.start} className={`rounded-sm ${SPAN_CLS[s.kind]}`}>{text.slice(s.start, s.end)}</span>);
+    at = s.end;
+  }
+  out.push(text.slice(at));
+  return out;
 }
 
 /**
@@ -104,9 +130,9 @@ function GhostInput({ value, onChange }: { value: string; onChange: (v: string) 
   return (
     <div className="space-y-1.5">
       <div className="relative">
-        <Textarea value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey} rows={3} className="text-[15px] md:text-[15px]" aria-label="What the person says" />
+        <Textarea value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey} rows={3} className="text-[15px] text-transparent caret-foreground md:text-[15px]" spellCheck={false} aria-label="What the person says" />
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 whitespace-pre-wrap break-words border border-transparent px-3 py-2 text-[15px]">
-          <span className="text-transparent">{value}</span>
+          <Highlighted text={value} />
           <span className="pointer-events-auto cursor-pointer text-muted-foreground/60" onClick={take}>{ghost}</span>
         </div>
       </div>
@@ -114,7 +140,7 @@ function GhostInput({ value, onChange }: { value: string; onChange: (v: string) 
         {match ? (
           <>
             <span>{match.label}</span>
-            <button type="button" onClick={take} className="rounded border px-1 font-mono text-[10px] hover:text-foreground">Tab</button>
+            <button type="button" onClick={take} className="hover:text-foreground"><Kbd>Tab</Kbd></button>
             {!value && <button type="button" onClick={() => setN((x) => x + 1)} aria-label="Another example" className="hover:text-foreground"><RefreshCwIcon className="size-3" /></button>}
           </>
         ) : (
@@ -177,8 +203,8 @@ function Field({ n, title, hint, children }: { n: string; title: string; hint?: 
       <h2 className="flex items-center gap-2 font-semibold">
         <span className="grid size-6 place-items-center rounded-full bg-primary/12 font-semibold text-primary text-xs">{n}</span>
         {title}
+        {hint && <Info>{hint}</Info>}
       </h2>
-      {hint && <p className="-mt-1 text-muted-foreground text-sm">{hint}</p>}
       {children}
     </section>
   );
