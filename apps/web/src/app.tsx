@@ -65,7 +65,7 @@ function Shell() {
   const [route, go] = useRoute();
   const { snap } = useOkayed();
   const waiting = snap?.cards.filter((c) => c.status === "open" && (c.kind === "grant" || c.kind === "policy")).length ?? 0;
-  const View = { chat: ChatView, rules: RulesView, activity: ActivityView, settings: SettingsView }[route];
+  const View = route === "chat" ? null : { rules: RulesView, activity: ActivityView, settings: SettingsView }[route];
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon" variant="inset">
@@ -105,7 +105,11 @@ function Shell() {
           <SidebarTrigger />
           <span className="font-semibold">{NAV.find((n) => n.route === route)?.label}</span>
         </header>
-        <View />
+        {/* The chat stays mounted on other pages: remounting it mid-reply lost or reordered the replies. */}
+        <div className={route === "chat" ? "contents" : "hidden"}>
+          <ChatView />
+        </div>
+        {View && <View />}
       </SidebarInset>
     </SidebarProvider>
   );
