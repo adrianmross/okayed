@@ -1,9 +1,11 @@
 import { ToggleGroup, ToggleGroupItem } from "@okayed/design/ui/toggle-group";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { AskView } from "./ask";
-import { OrgsView } from "./orgs";
-import { ComponentsView } from "./components";
-import { WordsView } from "./words";
+
+// The first view loads with the page; the rest load when opened.
+const WordsView = lazy(() => import("./words").then((m) => ({ default: m.WordsView })));
+const OrgsView = lazy(() => import("./orgs").then((m) => ({ default: m.OrgsView })));
+const ComponentsView = lazy(() => import("./components").then((m) => ({ default: m.ComponentsView })));
 
 // Served at /playground by the same Worker as the demo; in development the demo is on its own port.
 const WEB = (import.meta.env.VITE_WEB_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:5173" : "../");
@@ -35,7 +37,9 @@ export function App() {
           <a href={WEB} className="text-muted-foreground text-sm underline-offset-4 hover:underline">Try the demo ↗</a>
         </div>
       </header>
-      {view === "ask" ? <AskView /> : view === "words" ? <WordsView /> : view === "orgs" ? <OrgsView /> : <ComponentsView />}
+      <Suspense fallback={<div className="min-h-svh" />}>
+        {view === "ask" ? <AskView /> : view === "words" ? <WordsView /> : view === "orgs" ? <OrgsView /> : <ComponentsView />}
+      </Suspense>
     </div>
   );
 }

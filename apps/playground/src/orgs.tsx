@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WORD, WORD_CLS } from "./ask";
 import { NOW, SHA } from "./data";
 import { IdentityCard, SignInScreen, type Provider } from "./identity";
+import { Info } from "./info";
 
 /** The same policy as docs/interop.md: what Acme's groups may have their agents do. */
 const ACME: OrgPolicy = {
@@ -240,12 +241,10 @@ export function OrgsView() {
 function Step({ n, title, hint, children }: { n: string; title: string; hint: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
-      <div className="flex items-baseline gap-3">
+      <div className="flex items-center gap-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm">{n}</span>
-        <div>
-          <h2 className="font-semibold text-lg">{title}</h2>
-          <p className="text-muted-foreground text-sm">{hint}</p>
-        </div>
+        <h2 className="font-semibold text-lg">{title}</h2>
+        <Info>{hint}</Info>
       </div>
       {children}
     </section>

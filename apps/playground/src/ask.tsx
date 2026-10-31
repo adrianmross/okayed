@@ -50,18 +50,32 @@ export function AskView() {
           <Choice label="When" value={q.later} options={WHEN} onPick={(later) => setQ({ ...q, later })} />?
         </p>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className={`font-semibold text-4xl ${WORD_CLS[d.verdict]}`}>{WORD[d.verdict]}</div>
-            <p className="mt-1 text-muted-foreground">{d.reason}</p>
-            {d.decidedBy?.startsWith("budget:") ? (
-              <p className="mt-1 text-muted-foreground text-sm">A rule allows it, but a limit it counts against is used up.</p>
-            ) : (
-              decidedBy && <p className="mt-1 text-muted-foreground text-sm">Decided by “{decidedBy.note ?? tileTitle(decidedBy).title}”.</p>
-            )}
+          {/* Same height whatever the answer, so nothing below moves when it changes. */}
+          <div className="min-w-0 flex-1">
+            <div className={`font-semibold text-4xl transition-colors duration-300 ${WORD_CLS[d.verdict]}`}>{WORD[d.verdict]}</div>
+            <p className="mt-1 line-clamp-2 min-h-[2lh] text-muted-foreground">{d.reason}</p>
+            <p className="mt-1 min-h-[1lh] truncate text-muted-foreground text-sm">
+              {d.decidedBy?.startsWith("budget:") ? "A rule allows it, but a limit it counts against is used up." : decidedBy ? `Decided by “${decidedBy.note ?? tileTitle(decidedBy).title}”.` : ""}
+            </p>
           </div>
-          {d.verdict === "allow" && (
-            <Button variant="secondary" onClick={useOnce}>Use it once</Button>
-          )}
+          <Button variant="secondary" onClick={useOnce} className={d.verdict === "allow" ? "" : "invisible"} tabIndex={d.verdict === "allow" ? 0 : -1}>Use it once</Button>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold text-lg">Limits</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          {budgets.map((b) => (
+            <span key={b.id} className="inline-flex items-center gap-2 rounded-full border bg-card py-1 pr-1 pl-2 text-sm">
+              <ActionTile act={b.scope?.act} size="sm" className="size-5 [&_svg]:size-3" />
+              {b.note} · {b.uses !== undefined ? `${Math.max(0, b.uses - (usage[`budget:${b.id}`]?.uses ?? 0))} of ${b.uses} left` : `${Math.max(0, (b.risk ?? 0) - (usage[`budget:${b.id}`]?.risk ?? 0))} of ${b.risk} points left`}
+              <Button size="xs" variant="ghost" onClick={() => setBudgets(budgets.filter((x) => x !== b))}>Remove</Button>
+            </span>
+          ))}
+          {BUDGETS.filter(([, b]) => !budgets.some((x) => x.id === b.id)).map(([label, b]) => (
+            <Button key={label} size="sm" variant="outline" onClick={() => setBudgets([...budgets, b])}>+ {label}</Button>
+          ))}
+          {Object.keys(usage).length > 0 && <Button size="sm" variant="ghost" onClick={() => setUsage({})}>Reset limits</Button>}
         </div>
       </section>
 
@@ -84,6 +98,7 @@ export function AskView() {
             return (
               <RuleTile
                 key={r.id}
+                className="fade-in-0 zoom-in-95 animate-in duration-200"
                 act={r.act}
                 effect={r.effect}
                 spent={!!r.budget && /^0 of/.test(p.budget ?? "")}
@@ -93,26 +108,10 @@ export function AskView() {
               />
             );
           })}
-          <NewRuleTile onClick={() => setEditing({ rule: blankRule(), isNew: true })} />
+          <NewRuleTile className="transition-all" onClick={() => setEditing({ rule: blankRule(), isNew: true })} />
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-semibold text-lg">Limits</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          {budgets.map((b) => (
-            <span key={b.id} className="inline-flex items-center gap-2 rounded-full border bg-card py-1 pr-1 pl-2 text-sm">
-              <ActionTile act={b.scope?.act} size="sm" className="size-5 [&_svg]:size-3" />
-              {b.note} · {b.uses !== undefined ? `${Math.max(0, b.uses - (usage[`budget:${b.id}`]?.uses ?? 0))} of ${b.uses} left` : `${Math.max(0, (b.risk ?? 0) - (usage[`budget:${b.id}`]?.risk ?? 0))} of ${b.risk} points left`}
-              <Button size="xs" variant="ghost" onClick={() => setBudgets(budgets.filter((x) => x !== b))}>Remove</Button>
-            </span>
-          ))}
-          {BUDGETS.filter(([, b]) => !budgets.some((x) => x.id === b.id)).map(([label, b]) => (
-            <Button key={label} size="sm" variant="outline" onClick={() => setBudgets([...budgets, b])}>+ {label}</Button>
-          ))}
-          {Object.keys(usage).length > 0 && <Button size="sm" variant="ghost" onClick={() => setUsage({})}>Reset limits</Button>}
-        </div>
-      </section>
 
       {editing && (
         <RuleEditor
