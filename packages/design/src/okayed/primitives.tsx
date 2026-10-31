@@ -75,6 +75,25 @@ export function Token({ tone = "plain", children, className, interactive, ...pro
   );
 }
 
+/**
+ * An id or a key, the one way they're shown everywhere: monospace, its start and end, the whole value on hover, and
+ * copied on a tap.
+ */
+export function KeyChip({ value, head = 8, tail = 4, className }: { value: string; head?: number; tail?: number; className?: string }) {
+  const short = value.length > head + tail + 1 ? `${value.slice(0, head)}…${value.slice(-tail)}` : value;
+  return (
+    <button
+      type="button"
+      title={value}
+      aria-label={`${value}, copy`}
+      onClick={() => void navigator.clipboard?.writeText(value).catch(() => undefined)}
+      className={cn("inline-flex max-w-full items-center rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 outline-none transition hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring", className)}
+    >
+      <span className="truncate">{short}</span>
+    </button>
+  );
+}
+
 /** The okayed seal: pressed onto something you approved. */
 export function Seal({ className, label = "Okayed" }: { className?: string; label?: string }) {
   return (
