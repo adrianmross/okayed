@@ -116,7 +116,8 @@ try {
   check(receipts >= 3, `History keeps a signed receipt for each permission (${receipts})`);
 
   await page.goto(`${WEB}/#rules`);
-  check(await page.isVisible("text=Deploy to production"), "the new rule is in Rules");
+  const rule = await page.waitForSelector("text=Deploy to production", { timeout: 10000 }).catch(() => null);
+  check(rule !== null, "the new rule is in Rules");
   check(await page.locator("button", { hasText: "Deploy" }).filter({ hasText: "Blocked" }).count() >= 1, "so is the block, as a Blocked tile");
   await page.click("text=Merge PRs");
   await page.click('button[aria-pressed="false"]:has-text("Ask me")');
