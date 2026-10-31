@@ -243,3 +243,27 @@ adapted slightly.
 - `chore(mcp): keep the CLI executable`
 - `test: drive the browser test by swipe and hold`
 - `docs: swipe to decide, money cards and a quieter chat`
+
+## 13. Live, and open to the public
+
+CI and the deploy, then what showed up once it ran on the real Workers AI and I used it:
+
+```text
+Since this is public, how do I make sure people don't abuse it?
+```
+
+```text
+If I go to another page and back to the chat, it stops replying.
+```
+
+- `ci: add test, end-to-end and deploy workflows`
+- `fix(worker): simulate streaming so Workers AI tool calls arrive whole`
+- `docs: link the deployed demo and playground`
+- `fix(worker): let the live assistant answer after a tool, and take amounts as strings`
+- `feat(worker): limit model calls per person`
+- `fix(web): no flash when a rule allows an action`
+- `fix(web): keep the chat mounted on other pages`
+- `fix(web): leave rule-approved tool calls to the server`
+- `fix(web): show the saved chat after a reload`
+- `fix(core): the assistant chats, asks for a missing repo and takes "prod"`
+- `fix(design): the swipe holds while Face ID and signing run`
