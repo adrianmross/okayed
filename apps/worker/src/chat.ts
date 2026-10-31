@@ -8,6 +8,7 @@ import {
   stepCountIs,
   streamText,
   wrapLanguageModel,
+  type ModelMessage,
 } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { DEMO_SYSTEM, demoTools, scriptedModel, type DemoBackend } from "@okayed/core";
@@ -17,6 +18,14 @@ import type { Env } from "./env.ts";
  * The demo chat, one per person: an assistant with simulated tools. Every tool call goes through the person's okayed
  * (its own Durable Object): allowed by a rule, asks with a card, or blocked. Messages persist in this object's SQLite.
  */
+const SMALL_TALK = /^\s*(?:hi|hey|hello|yo|hiya|howdy|thanks|thank you|ty|good (?:morning|afternoon|evening)|what can you do|who are you|how were you built)\b[\s!.?,]*(?:there|again)?[\s!.?]*$/i;
+
+function lastUserText(messages: ModelMessage[]): string {
+  const m = [...messages].reverse().find((x) => x.role === "user");
+  if (!m) return "";
+  return typeof m.content === "string" ? m.content : m.content.map((p) => (p.type === "text" ? p.text : "")).join(" ");
+}
+
 export class OkayedChat extends AIChatAgent<Env> {
   async onChatMessage(onFinish: unknown, options?: { abortSignal?: AbortSignal }): Promise<Response> {
     // Each message costs a model call, so a person gets a few a minute; over that, the assistant says so.
@@ -62,7 +71,8 @@ export class OkayedChat extends AIChatAgent<Env> {
       toolApproval,
       stopWhen: stepCountIs(5),
       // Llama calls the same tool again after its result instead of answering, so after a result it can only reply.
-      prepareStep: ({ messages }) => (messages.at(-1)?.role === "tool" ? { activeTools: [] } : {}),
+      // A greeting once set off a merge, so small talk gets no tools at all.
+      prepareStep: ({ messages }) => (messages.at(-1)?.role === "tool" || SMALL_TALK.test(lastUserText(messages)) ? { activeTools: [] } : {}),
       ...(onFinish ? { onFinish: onFinish as never } : {}),
       ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
     });

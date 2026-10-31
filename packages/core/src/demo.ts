@@ -78,7 +78,11 @@ const SPECS = {
   } satisfies Spec<{ repo: string; number: number }>,
   deploy_site: {
     description: "Deploy a website to an environment.",
-    input: z.object({ site: z.string().describe("host, e.g. openmeadow.org"), environment: z.enum(["production", "staging", "preview"]) }),
+    input: z.object({
+      site: z.string().describe("host, e.g. openmeadow.org"),
+      // People say "prod" and "stage"; the model passes their word along.
+      environment: z.preprocess((v) => (typeof v === "string" ? ({ prod: "production", stage: "staging" }[v.toLowerCase()] ?? v.toLowerCase()) : v), z.enum(["production", "staging", "preview"])),
+    }),
     act: "site.deploy",
     res: (i: { site: string; environment: string }) => `site:${i.site.toLowerCase()}/${i.environment}`,
     why: (i: { environment: string }) => `I want to ship the latest build to ${i.environment}.`,
@@ -136,6 +140,10 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
     description: "Suggest a rule in the person's words, e.g. 'always allow merges in okayed for 2 weeks'. The person reviews and adds it; you can't change their rules yourself.",
     inputSchema: z.object({ sentence: z.string().max(400) }),
     execute: async ({ sentence }: { sentence: string }) => {
+      // "A rule for a new repo" names no repo, and drafting it anyway made one up. Ask instead.
+      if (/\b(?:repo|repository|pull requests?|prs?|merges?)\b/i.test(sentence) && !/\b(?:any|every|all)\b/i.test(sentence) && !extractAnchors(sentence, DEMO_TARGETS).repos.length) {
+        return { proposed: false, reason: "it doesn't say which repo; ask the person which one" };
+      }
       const card = await b.proposePolicy(sentence);
       return { proposed: card.kind === "policy", card: card.cardId, summary: card.sentence };
     },
@@ -156,8 +164,14 @@ export function demoTools(b: DemoBackend): { tools: ToolSet; toolApproval: ToolA
 
 export const DEMO_SYSTEM = `You are a helpful engineering assistant in a demo of okayed, a service that turns a person's okay into an exact, signed, expiring permission.
 You can read repositories, comment on and merge pull requests, deploy sites and buy things, but only through your tools. Every tool call is checked by okayed: the person's rules may allow it, ask the person (who allows it with Face ID), or block it. All actions are simulated.
-Rules: use a tool whenever the person asks you to do something; never claim something happened unless the tool result says done: true; if a tool was refused or not approved, say so plainly and don't retry. Repos default to owner adrianmross. Keep replies to one short sentence: the chat already shows each action, how it was allowed and its receipt, so don't repeat those.
-If the person describes a rule ("always allow merges in okayed for two weeks", "never deploy to production"), call propose_policy with their sentence.`;
+Rules:
+- When the person asks you to do one of those things, use the tool. Repos default to owner adrianmross.
+- When something you need is missing or vague (which repo, which pull request, which site), ask for it in one short question instead of guessing.
+- Greetings, small talk and questions about you or okayed get a friendly one-sentence answer in words, with no tool. Say hello back and ask what they'd like to do; never act on a greeting. If asked how you were built: Llama 3.3 on Cloudflare Workers AI, running as a Cloudflare Agent, with okayed checking each tool call.
+- For something you have no tool for, say so and name what you can do instead.
+- Never claim something happened unless the tool result says done: true. If a tool was refused, failed or wasn't approved, say so plainly, with the reason if you have one, and don't retry.
+- Call propose_policy only when the person describes a rule for a specific target ("always allow merges in okayed for two weeks", "never deploy openmeadow.org to production"), with their sentence.
+Keep replies to one short sentence: the chat already shows each action, how it was allowed and its receipt, so don't repeat those.`;
 
 // ---------- a scripted model, for running without Workers AI ----------
 
