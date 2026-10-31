@@ -292,3 +292,34 @@ If the passkey isn't set up and you ask the chat for something that needs it, it
 - `feat(playground): a sign-in screen with provider logos and who signs what`
 - `test(e2e): read receipt ids in their KeyChip form`
 - `fix(web): a passkey prompt that never answers no longer hangs the approval`
+
+## 15. Words → grant, minimal and steady
+
+```text
+The Words page needs work. In step 1, I don't get all the badges and options. Show what's pending as a queue, with
+toggling on and off and a way to add more. Steps 3 to 5 are good, but don't hide the details by default.
+```
+
+```text
+Make it more minimal, and hide the builder unless Add is clicked. Instead of showing all those options, type out
+example prompts as ghost text that a key accepts, like Copilot's autocomplete in VS Code.
+```
+
+```text
+There's too much movement when clicking things: switching between Balanced and Cautious, things jump. Things should
+stay in place, and only the words or elements that change (like the number of rule cards) should change. Use shadcn's
+prebuilt components where we can, and lazy loading, so it feels native.
+```
+
+```text
+No duplicate or over-verbose explanations: Tab is mentioned in two places. If a hint is really needed, put it behind
+an info icon. And add syntax highlighting as you type, like in [redacted], so you know you're naming the right
+resource, action or person.
+```
+
+- `feat(playground): Words → grant explains its examples, queues pending requests and shows details`
+- `feat(playground): ghost-text examples in Words → grant, and Add opens the queue builder`
+- `feat(engine): highlight() marks what a sentence pins down, with positions`
+- `feat(playground): color words as you type, hints behind info icons, steady Ask layout, lazy views`
+- `perf(web): lazy-load Rules, Activity and Settings`
+- `test(scripts): wait for the lazy Rules page in the web e2e`
