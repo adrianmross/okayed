@@ -41,6 +41,8 @@ export class OkayedChat extends AIChatAgent<Env> {
       tools,
       toolApproval,
       stopWhen: stepCountIs(5),
+      // Llama calls the same tool again after its result instead of answering, so after a result it can only reply.
+      prepareStep: ({ messages }) => (messages.at(-1)?.role === "tool" ? { activeTools: [] } : {}),
       ...(onFinish ? { onFinish: onFinish as never } : {}),
       ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
     });

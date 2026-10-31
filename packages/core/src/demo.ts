@@ -62,7 +62,7 @@ const SPECS = {
   } satisfies Spec<{ repo: string }>,
   comment_on_pull_request: {
     description: "Post a comment on a GitHub pull request.",
-    input: z.object({ repo: z.string(), number: z.number().int().positive(), comment: z.string().max(500) }),
+    input: z.object({ repo: z.string(), number: z.coerce.number().int().positive(), comment: z.string().max(500) }),
     act: "github.pr.comment",
     res: (i: { repo: string; number: number }) => `github:${repoOf(i.repo)}/pull/${i.number}`,
     why: (i: { comment: string }) => `I want to comment “${i.comment.slice(0, 80)}”.`,
@@ -70,7 +70,7 @@ const SPECS = {
   } satisfies Spec<{ repo: string; number: number; comment: string }>,
   merge_pull_request: {
     description: "Merge a GitHub pull request at its current head commit.",
-    input: z.object({ repo: z.string(), number: z.number().int().positive() }),
+    input: z.object({ repo: z.string(), number: z.coerce.number().int().positive() }),
     act: "github.pr.merge",
     res: (i: { repo: string; number: number }) => `github:${repoOf(i.repo)}/pull/${i.number}@${demoHead(repoOf(i.repo), i.number)}`,
     why: (i: { number: number }) => `Checks are green on #${i.number}, so it's ready to merge.`,
@@ -86,7 +86,7 @@ const SPECS = {
   } satisfies Spec<{ site: string; environment: string }>,
   buy: {
     description: "Buy something with the saved card, up to an amount in US dollars.",
-    input: z.object({ item: z.string(), amount_usd: z.number().positive().max(10000) }),
+    input: z.object({ item: z.string(), amount_usd: z.coerce.number().positive().max(10000) }),
     act: "spend.money",
     res: (i: { amount_usd: number }) => `money:card-1/USD/${Math.ceil(i.amount_usd)}`,
     why: (i: { item: string }) => `I want to buy ${i.item} for you.`,
