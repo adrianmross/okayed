@@ -3,7 +3,7 @@ import { registerPack, registeredPacks } from "@okayed/engine";
 import { useAgent } from "agents/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { approveWithPasskey, passkeysSupported } from "./passkey";
+import { PasskeyNoResponse, approveWithPasskey, passkeysSupported } from "./passkey";
 import { call, type Session } from "./session";
 
 interface Okayed {
@@ -83,7 +83,7 @@ export function OkayedProvider({ session, onSignOut, onReset, children }: { sess
           return true;
         } catch (e) {
           const msg = (e as Error).message;
-          toast.error(/NotAllowed|cancel|timed out/i.test(msg) ? "Face ID was cancelled." : msg);
+          toast.error(e instanceof PasskeyNoResponse || !/NotAllowed|cancel|timed out/i.test(msg) ? msg : "Face ID was cancelled.");
           return false;
         }
       },
