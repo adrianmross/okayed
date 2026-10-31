@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { cn } from "../lib/utils";
-import { ActionTile, AgentAvatar, Seal, agentName } from "./primitives";
+import { ActionTile, AgentAvatar, KeyChip, Seal, agentName } from "./primitives";
 
 export type ReceiptStatus = "active" | "used" | "expired" | "revoked";
 
@@ -65,7 +65,7 @@ export function ReceiptCard(p: ReceiptCardProps) {
       </div>
       <div className="flex items-center gap-3 px-4 py-2.5 text-xs">
         <span className="inline-flex items-center gap-1 text-muted-foreground"><CheckIcon className="size-3.5 text-allow" />{p.used} of {p.uses} {p.uses === 1 ? "use" : "uses"}</span>
-        <span className="truncate font-mono text-muted-foreground" title={p.grantId}>{p.grantId.slice(0, 10)}</span>
+        <KeyChip value={p.grantId} className="bg-transparent px-0 text-muted-foreground" />
         {p.simulated && <span className="text-muted-foreground">· simulated</span>}
         <span className="ml-auto flex gap-1">
           {p.onShowEvent && <Button size="xs" variant="ghost" onClick={p.onShowEvent}><FileJson2Icon />Signed record</Button>}
