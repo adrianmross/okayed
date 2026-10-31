@@ -16,16 +16,17 @@ import {
   SidebarTrigger,
 } from "@okayed/design/ui/sidebar";
 import { ActivityIcon, MessageCircleIcon, Settings2Icon, ShieldCheckIcon } from "lucide-react";
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, lazy, useCallback, useState } from "react";
 import { OkayedProvider, useOkayed } from "./lib/okayed";
 import { useRoute, type Route } from "./lib/route";
 import { call, createUser, loadSession, saveSession, type Session } from "./lib/session";
-import { ActivityView } from "./views/activity";
 import { ChatView, RESET_CHAT } from "./views/chat";
 import { Connect } from "./views/connect";
-import { RulesView } from "./views/rules";
-import { SettingsView } from "./views/settings";
 import { Welcome } from "./views/welcome";
+
+const ActivityView = lazy(() => import("./views/activity").then((m) => ({ default: m.ActivityView })));
+const RulesView = lazy(() => import("./views/rules").then((m) => ({ default: m.RulesView })));
+const SettingsView = lazy(() => import("./views/settings").then((m) => ({ default: m.SettingsView })));
 
 const NAV: { route: Route; label: string; icon: typeof MessageCircleIcon }[] = [
   { route: "chat", label: "Chat", icon: MessageCircleIcon },
@@ -123,7 +124,7 @@ function Shell() {
             <ChatView />
           </Suspense>
         </div>
-        {View && <View />}
+        {View && <Suspense fallback={null}><View /></Suspense>}
       </SidebarInset>
     </SidebarProvider>
   );
